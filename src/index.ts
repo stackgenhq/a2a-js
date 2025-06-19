@@ -3,5 +3,6 @@
  * Exports the common types.
  */
 
-export * from "./types.js";
 export type { A2AResponse } from "./a2a_response.js";
+export * from "./types.js";
+
