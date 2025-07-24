@@ -85,7 +85,8 @@ export class DefaultRequestHandler implements A2ARequestHandler {
             taskId,
             contextId,
             task,
-            referenceTasks
+            referenceTasks,
+            incomingMessage.metadata
         );
     }
 
