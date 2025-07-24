@@ -15,6 +15,14 @@ export interface AuthenticationHandler {
     headers: () => HttpHeaders;
 
     /**
+     * Fetches a URL with the provided options.
+     * @param url The URL to fetch.
+     * @param options A function that receives the current headers and returns a RequestInit object.
+     * @returns A Promise that resolves to the Response object.
+     */
+    fetch?: (url: string, options: RequestInit) => Promise<Response>;
+
+    /**
      * Called to check if the HTTP request should be retried with new headers.  This usually
      * occours when the HTTP response issues a 401 or 403.  If this
      * function returns new HTTP headers, then the request should be retried with

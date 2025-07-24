@@ -1,35 +1,25 @@
 import {
+  A2AError,
   AgentCard,
-  AgentCapabilities,
-  JSONRPCRequest,
-  JSONRPCResponse,
-  JSONRPCSuccessResponse,
+  CancelTaskResponse,
+  GetTaskPushNotificationConfigResponse,
+  GetTaskResponse,
   JSONRPCError,
   JSONRPCErrorResponse,
+  JSONRPCRequest,
+  JSONRPCResponse,
   Message,
-  Task,
-  TaskStatusUpdateEvent,
-  TaskArtifactUpdateEvent,
   MessageSendParams,
   SendMessageResponse,
   SendStreamingMessageResponse,
   SendStreamingMessageSuccessResponse,
-  TaskQueryParams,
-  GetTaskResponse,
-  GetTaskSuccessResponse,
-  TaskIdParams,
-  CancelTaskResponse,
-  CancelTaskSuccessResponse,
-  TaskPushNotificationConfig, // Renamed from PushNotificationConfigParams for direct schema alignment
-  SetTaskPushNotificationConfigRequest,
   SetTaskPushNotificationConfigResponse,
-  SetTaskPushNotificationConfigSuccessResponse,
-  GetTaskPushNotificationConfigRequest,
-  GetTaskPushNotificationConfigResponse,
-  GetTaskPushNotificationConfigSuccessResponse,
-  TaskResubscriptionRequest,
-  A2AError,
-  SendMessageSuccessResponse
+  Task,
+  TaskArtifactUpdateEvent,
+  TaskIdParams,
+  TaskPushNotificationConfig, // Renamed from PushNotificationConfigParams for direct schema alignment
+  TaskQueryParams,
+  TaskStatusUpdateEvent
 } from '../types.js'; // Assuming schema.ts is in the same directory or appropriately pathed
 import { AuthenticationHandler, HttpHeaders } from './auth-handler.js';
 
@@ -69,7 +59,7 @@ export class A2AClient {
    * @returns A Promise that resolves to the AgentCard.
    */
   private async _fetchAndCacheAgentCard(): Promise<AgentCard> {
-    const agentCardUrl = this.resolveAgentCardUrl( this.agentBaseUrl );
+    const agentCardUrl = this.resolveAgentCardUrl(this.agentBaseUrl);
     try {
       const response = await fetch(agentCardUrl, {
         headers: { 'Accept': 'application/json' },
@@ -100,7 +90,7 @@ export class A2AClient {
    */
   public async getAgentCard(agentBaseUrl?: string): Promise<AgentCard> {
     if (agentBaseUrl) {
-      const agentCardUrl = this.resolveAgentCardUrl( agentBaseUrl );
+      const agentCardUrl = this.resolveAgentCardUrl(agentBaseUrl);
 
       const response = await fetch(agentCardUrl, {
         headers: { 'Accept': 'application/json' },
@@ -121,9 +111,9 @@ export class A2AClient {
    * @param agentUrl The agent URL.
    * @returns The agent card URL.
    */
-  private resolveAgentCardUrl( agentUrl: string ): string {
+  private resolveAgentCardUrl(agentUrl: string): string {
     agentUrl = agentUrl.replace(/\/$/, ""); // remove trailing slash if any
-    const url = new URL( agentUrl );
+    const url = new URL(agentUrl);
     return url.pathname === "/"
       ? `${agentUrl}/.well-known/agent.json`
       : `${agentUrl}/agent.json`;
@@ -166,7 +156,7 @@ export class A2AClient {
       id: requestId,
     };
 
-    const httpResponse = await this._fetch( endpoint, rpcRequest );
+    const httpResponse = await this._fetch(endpoint, rpcRequest);
 
     if (!httpResponse.ok) {
       let errorBodyText = '(empty or non-JSON response)';
@@ -208,7 +198,7 @@ export class A2AClient {
    * @param acceptHeader The Accept header to use.  Defaults to "application/json".
    * @returns A Promise that resolves to the fetch HTTP response.
    */
-  private async _fetch( url: string, rpcRequest: JSONRPCRequest, acceptHeader: string = "application/json" ): Promise<Response> {
+  private async _fetch(url: string, rpcRequest: JSONRPCRequest, acceptHeader: string = "application/json"): Promise<Response> {
     const options = (headers: HttpHeaders = {}) => ({
       method: "POST",
       headers: {
@@ -216,17 +206,27 @@ export class A2AClient {
         "Accept": acceptHeader, // Expect JSON response for non-streaming requests
         ...headers // if we have an Authorization header, add it
       },
-      body: JSON.stringify(rpcRequest)
+      body: JSON.stringify(rpcRequest),
     } as RequestInit);
-    const requestInit = options( this.authHandler?.headers() );
+    const requestInit = options(this.authHandler?.headers());
 
-    let fetchResponse = await fetch(url, requestInit);
+    // Use the fetch method from the authHandler if provided, otherwise use the global fetch
+    let fetchResponse: Response;
+    if (this.authHandler?.fetch) {
+      fetchResponse = await this.authHandler.fetch(url, requestInit);
+    } else {
+      fetchResponse = await fetch(url, requestInit);
+    }
 
     // check for HTTP 401/403 and retry request if necessary
     const updatedHeaders = await this.authHandler?.shouldRetryWithHeaders(requestInit, fetchResponse);
     if (updatedHeaders) {
       // retry request with revised headers
-      fetchResponse = await fetch(url, options(updatedHeaders));
+      if (this.authHandler?.fetch) {
+        fetchResponse = await this.authHandler.fetch(url, requestInit);
+      } else {
+        fetchResponse = await fetch(url, requestInit);
+      }
       if (fetchResponse.ok && this.authHandler?.onSuccess)
         await this.authHandler.onSuccess(updatedHeaders); // Remember headers that worked
     }
@@ -270,7 +270,7 @@ export class A2AClient {
       id: clientRequestId,
     };
 
-    const response = await this._fetch( endpoint, rpcRequest, "text/event-stream" );
+    const response = await this._fetch(endpoint, rpcRequest, "text/event-stream");
 
     if (!response.ok) {
       // Attempt to read error body for more details
