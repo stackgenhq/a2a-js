@@ -152,6 +152,13 @@ export type TaskState =
   | "rejected"
   | "auth-required"
   | "unknown";
+/**
+ * Supported A2A transport protocols.
+ *
+ * This interface was referenced by `MySchema`'s JSON-Schema
+ * via the `definition` "TransportProtocol".
+ */
+export type TransportProtocol = "JSONRPC" | "GRPC" | "HTTP+JSON";
 
 export interface MySchema {
   [k: string]: unknown;
@@ -1070,7 +1077,16 @@ export interface AgentExtension {
 export interface AgentCard {
   /**
    * A list of additional supported interfaces (transport and URL combinations).
-   * A client can use any of these to communicate with the agent.
+   * This allows agents to expose multiple transports, potentially at different URLs.
+   *
+   * Best practices:
+   * - SHOULD include all supported transports for completeness
+   * - SHOULD include an entry matching the main 'url' and 'preferredTransport'
+   * - MAY reuse URLs if multiple transports are available at the same endpoint
+   * - MUST accurately declare the transport available at each URL
+   *
+   * Clients can select any interface from this list based on their transport capabilities
+   * and preferences. This enables transport negotiation and fallback scenarios.
    */
   additionalInterfaces?: AgentInterface[];
   capabilities: AgentCapabilities1;
@@ -1102,7 +1118,12 @@ export interface AgentCard {
    */
   name: string;
   /**
-   * The transport protocol for the preferred endpoint. Defaults to 'JSONRPC' if not specified.
+   * The transport protocol for the preferred endpoint (the main 'url' field).
+   * If not specified, defaults to 'JSONRPC'.
+   *
+   * IMPORTANT: The transport specified here MUST be available at the main 'url'.
+   * This creates a binding between the main URL and its supported transport protocol.
+   * Clients should prefer this transport and URL combination when both are supported.
    */
   preferredTransport?: string;
   /**
@@ -1135,6 +1156,7 @@ export interface AgentCard {
   supportsAuthenticatedExtendedCard?: boolean;
   /**
    * The preferred endpoint URL for interacting with the agent.
+   * This URL MUST support the transport specified by 'preferredTransport'.
    */
   url: string;
   /**
@@ -1144,18 +1166,18 @@ export interface AgentCard {
 }
 /**
  * Declares a combination of a target URL and a transport protocol for interacting with the agent.
+ * This allows agents to expose the same functionality over multiple transport mechanisms.
  *
  * This interface was referenced by `MySchema`'s JSON-Schema
  * via the `definition` "AgentInterface".
  */
 export interface AgentInterface {
   /**
-   * The transport protocol supported at this URL. This is a string to allow for future
-   * extension. Core supported transports include 'JSONRPC', 'GRPC', and 'HTTP+JSON'.
+   * The transport protocol supported at this URL.
    */
   transport: string;
   /**
-   * The URL where this interface is available.
+   * The URL where this interface is available. Must be a valid absolute HTTPS URL in production.
    */
   url: string;
 }
