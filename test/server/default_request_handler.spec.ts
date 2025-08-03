@@ -208,7 +208,9 @@ describe('DefaultRequestHandler as A2ARequestHandler', () => {
 
     it('sendMessage: should handle agent execution failure for blocking calls', async () => {
         const errorMessage = 'Agent failed!';
-        (mockAgentExecutor as MockAgentExecutor).execute.rejects(new Error(errorMessage));
+        (mockAgentExecutor as MockAgentExecutor).execute.callsFake(async () => {
+            throw new Error(errorMessage);
+        });
     
         // Test blocking case
         const blockingParams: MessageSendParams = {
@@ -282,7 +284,9 @@ describe('DefaultRequestHandler as A2ARequestHandler', () => {
 
     it('sendMessage: should handle agent execution failure for non-blocking calls', async () => {
         const errorMessage = 'Agent failed!';
-        (mockAgentExecutor as MockAgentExecutor).execute.rejects(new Error(errorMessage));
+        (mockAgentExecutor as MockAgentExecutor).execute.callsFake(async () => {
+            throw new Error(errorMessage);
+        });
     
         // Test non-blocking case
         const nonBlockingParams: MessageSendParams = {
