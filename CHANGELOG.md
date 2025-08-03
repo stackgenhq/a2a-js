@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.2.5](https://github.com/a2aproject/a2a-js/compare/v0.2.4...v0.2.5) (2025-07-30)
+
+
+### Features
+
+* add support for custom agent card url. resolves [#68](https://github.com/a2aproject/a2a-js/issues/68) ([#79](https://github.com/a2aproject/a2a-js/issues/79)) ([dc92d32](https://github.com/a2aproject/a2a-js/commit/dc92d321ac7c142ff5232cdca0db8a24b4d76da0))
+* Export ExecutionEventQueue in server ([#61](https://github.com/a2aproject/a2a-js/issues/61)) ([530c0b9](https://github.com/a2aproject/a2a-js/commit/530c0b9f1fd50fafd991f640c119837860ae8c3f))
+* Export type AgentExecutionEvent ([#66](https://github.com/a2aproject/a2a-js/issues/66)) ([f4c81f4](https://github.com/a2aproject/a2a-js/commit/f4c81f41866c24d83823b5db7d24b5fdb56b37b4))
+
+
+### Bug Fixes
+
+* correct the example code ([#64](https://github.com/a2aproject/a2a-js/issues/64)) ([126eee4](https://github.com/a2aproject/a2a-js/commit/126eee4e3b79e9475a5af5cbebb0e98b68f286fa))
+* setting context id in _createRequestContext ([#49](https://github.com/a2aproject/a2a-js/issues/49)) ([1abc8a1](https://github.com/a2aproject/a2a-js/commit/1abc8a1f3590f78647d94c5a1e31444203e1131f))
+
+## [0.2.4](https://github.com/a2aproject/a2a-js/compare/v0.2.3...v0.2.4) (2025-07-14)
+
+
+### Miscellaneous Chores
+
+* fix empty npm publish by version-bump ([#56](https://github.com/a2aproject/a2a-js/issues/56)) ([b12e033](https://github.com/a2aproject/a2a-js/commit/b12e033ed8ffc823672d68d749344247ee0914ee))
+
+## [0.2.3](https://github.com/a2aproject/a2a-js/compare/v0.2.2...v0.2.3) (2025-07-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* separate entrypoints for client, server & common
+
+### Features
+
+* add CommonJS support alongside ESM ([#27](https://github.com/a2aproject/a2a-js/issues/27)) ([1b3e516](https://github.com/a2aproject/a2a-js/commit/1b3e516e2ba6058eddd84943b07616cf5b74f5b0))
+* Allow adding middlewares in server ([#51](https://github.com/a2aproject/a2a-js/issues/51)) ([b4fc323](https://github.com/a2aproject/a2a-js/commit/b4fc323c1f607622ee7841c95c1e401cf79df186))
+* separate entrypoints for client, server & common ([e8dd025](https://github.com/a2aproject/a2a-js/commit/e8dd0250847c1e628a1c932f1ba4cc5c57064714))
+
 ## [0.2.2](https://github.com/google-a2a/a2a-js/compare/v0.2.1...v0.2.2) (2025-06-20)
 
 

@@ -1,8 +1,7 @@
 /**
  * Main entry point for the A2A Server V2 library.
- * Exports the server class, store implementations, and core types.
+ * Exports the common types.
  */
-
 
 export type { AgentExecutor } from "./server/agent_execution/agent_executor.js";
 export { RequestContext } from "./server/agent_execution/request_context.js";
