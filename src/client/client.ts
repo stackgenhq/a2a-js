@@ -167,7 +167,7 @@ export class A2AClient {
       id: requestId,
     };
 
-    const httpResponse = await this._fetch( endpoint, rpcRequest );
+    const httpResponse = await this._fetchRpc( endpoint, rpcRequest );
 
     if (!httpResponse.ok) {
       let errorBodyText = '(empty or non-JSON response)';
@@ -209,7 +209,7 @@ export class A2AClient {
    * @param acceptHeader The Accept header to use.  Defaults to "application/json".
    * @returns A Promise that resolves to the fetch HTTP response.
    */
-  private async _fetch( url: string, rpcRequest: JSONRPCRequest, acceptHeader: string = "application/json" ): Promise<Response> {
+  private async _fetchRpc( url: string, rpcRequest: JSONRPCRequest, acceptHeader: string = "application/json" ): Promise<Response> {
     const options = (headers: HttpHeaders = {}) => ({
       method: "POST",
       headers: {
@@ -271,7 +271,7 @@ export class A2AClient {
       id: clientRequestId,
     };
 
-    const response = await this._fetch( endpoint, rpcRequest, "text/event-stream" );
+    const response = await this._fetchRpc( endpoint, rpcRequest, "text/event-stream" );
 
     if (!response.ok) {
       // Attempt to read error body for more details
