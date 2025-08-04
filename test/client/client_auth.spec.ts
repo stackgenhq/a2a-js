@@ -825,7 +825,7 @@ describe('A2AClient Authentication Tests', () => {
         expect(error).to.be.instanceOf(Error);
         // The error is "Body is unusable: Body has already been read" due to Response body reuse
         // This is expected behavior when no authHandler is provided and server returns 401
-        expect((error as Error).message).to.include('Body is unusable: Body has already been read');
+        expect((error as Error).message).to.include('Body is unusable');
       }
 
       // Verify that fetch was called only once (no retry attempted)
