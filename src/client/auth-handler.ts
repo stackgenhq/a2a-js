@@ -15,10 +15,13 @@ export interface AuthenticationHandler {
     headers: () => HttpHeaders;
 
     /**
-     * Called to check if the HTTP request should be retried with new headers.  This usually
+     * Called to check if the HTTP request should be retried with *new* headers.  This usually
      * occours when the HTTP response issues a 401 or 403.  If this
      * function returns new HTTP headers, then the request should be retried with
      * the revised headers.
+     *
+     * Note that the new headers returned by this request are transient, and will only be saved
+     * when the onSuccess() function is called, or otherwise discarded.
      * @param req The RequestInit object used to invoke fetch()
      * @param res The fetch Response object
      * @returns If the HTTP request should be retried then returns the HTTP headers to use,
@@ -26,6 +29,12 @@ export interface AuthenticationHandler {
      */
     shouldRetryWithHeaders: (req:RequestInit, res:Response) => Promise<HttpHeaders | undefined>;
 
-    /* If the last call using the headers was successful, report back using this function. */
+    /**
+     * If the last call using the headers from shouldRetryWithHeaders() was successful, report back
+     * using this function so the headers are preserved for subsequent requests.
+     *
+     * It is possible the server will reject the headers if they are not valid.  In this case,
+     * the attempted headers should be discarded which is accomplished by not calling this function.
+    */
     onSuccess: (headers:HttpHeaders) => Promise<void>
 }
