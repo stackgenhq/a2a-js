@@ -3,3 +3,4 @@
  */
 
 export { A2AClient } from "./client.js";
+export * from "./auth-handler.js";
