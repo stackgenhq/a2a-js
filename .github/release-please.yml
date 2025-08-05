@@ -1,4 +1,0 @@
-releaseType: node
-handleGHRelease: true
-bumpMinorPreMajor: false
-bumpPatchForMinorPreMajor: true
