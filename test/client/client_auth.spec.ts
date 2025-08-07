@@ -4,30 +4,10 @@ import sinon from 'sinon';
 import { A2AClient } from '../../src/client/client.js';
 import { AuthenticationHandler, HttpHeaders, AuthHandlingFetch } from '../../src/client/auth-handler.js';
 import { AgentCard, MessageSendParams, TextPart, Message, SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
-import { extractRequestId } from './util.js';
+import { extractRequestId, createResponse, createAgentCardResponse } from './util.js';
 
 
-// Factory function to create fresh Response objects that can be read multiple times
-function createFreshResponse(id: number, result: any, status: number = 200, headers: Record<string, string> = {}): Response {
-  const defaultHeaders = { 'Content-Type': 'application/json' };
-  const responseHeaders = { ...defaultHeaders, ...headers };
-  
-  // Create a fresh body each time to avoid "Body is unusable" errors
-  const body = JSON.stringify(result);
-  
-  // Create a ReadableStream to ensure the body can be read multiple times
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode(body));
-      controller.close();
-    }
-  });
-  
-  return new Response(stream, {
-    status,
-    headers: responseHeaders
-  });
-}
+
 
 // Challenge manager class for authentication testing
 class ChallengeManager {
@@ -89,7 +69,7 @@ function createFreshMockFetch(url: string, options?: RequestInit) {
       skills: []
     };
     
-    return createFreshResponse(1, mockAgentCard);
+    return createAgentCardResponse(mockAgentCard);
   }
   
   // Simulate RPC endpoint calls
@@ -103,38 +83,26 @@ function createFreshMockFetch(url: string, options?: RequestInit) {
   if (!authHeader) {
     const challenge = challengeManager.createChallenge();
 
-    return createFreshResponse(requestId, {
-      jsonrpc: '2.0',
-      error: {
-        code: -32001,
-        message: 'Authentication required'
-      },
-      id: requestId
+    return createResponse(requestId, undefined, {
+      code: -32001,
+      message: 'Authentication required'
     }, 401, { 'WWW-Authenticate': `Agentic ${challenge}` });
   }
 
   // We have an auth header, so make sure the scheme is correct
   const [ scheme, params ] = authHeader.split(/\s+/);
   if (scheme !== 'Agentic') {
-    return createFreshResponse(requestId, {
-      jsonrpc: '2.0',
-      error: {
-        code: -32001,
-        message: 'Invalid authorization scheme'
-      },
-      id: requestId
+    return createResponse(requestId, undefined, {
+      code: -32001,
+      message: 'Invalid authorization scheme'
     }, 401);
   }
 
   // If an auth header is provided, make sure it's the signed challenge
   if (!challengeManager.verifyToken(params)) {
-    return createFreshResponse(requestId, {
-      jsonrpc: '2.0',
-      error: {
-        code: -32001,
-        message: 'Invalid authorization token'
-      },
-      id: requestId
+    return createResponse(requestId, undefined, {
+      code: -32001,
+      message: 'Invalid authorization token'
     }, 401);
   }
 
@@ -149,11 +117,7 @@ function createFreshMockFetch(url: string, options?: RequestInit) {
     } as TextPart]
   };
   
-  return createFreshResponse(requestId, {
-    jsonrpc: '2.0',
-    result: mockMessage,
-    id: requestId
-  });
+  return createResponse(requestId, mockMessage);
 }
 
 
@@ -309,11 +273,7 @@ describe('A2AClient Authentication Tests', () => {
             };
             
             const requestId = extractRequestId(options);
-            return createFreshResponse(requestId, {
-              jsonrpc: '2.0',
-              result: mockMessage,
-              id: requestId
-            });
+            return createResponse(requestId, mockMessage);
           }
         }
         return new Response('Not found', { status: 404 });
@@ -365,7 +325,7 @@ describe('A2AClient Authentication Tests', () => {
             skills: []
           };
           
-          return createFreshResponse(1, mockAgentCard);
+          return createAgentCardResponse(mockAgentCard);
         }
         
         if (url.includes('/api')) {
@@ -374,13 +334,9 @@ describe('A2AClient Authentication Tests', () => {
           // If no auth header, return 401 to trigger auth flow
           if (!authHeader) {
             const requestId = extractRequestId(options);
-            return createFreshResponse(requestId, {
-              jsonrpc: '2.0',
-              error: {
-                code: -32001,
-                message: 'Authentication required'
-              },
-              id: requestId
+            return createResponse(requestId, undefined, {
+              code: -32001,
+              message: 'Authentication required'
             }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
           }
           
@@ -397,11 +353,7 @@ describe('A2AClient Authentication Tests', () => {
             };
             
             const requestId = extractRequestId(options);
-            return createFreshResponse(requestId, {
-              jsonrpc: '2.0',
-              result: mockMessage,
-              id: requestId
-            });
+            return createResponse(requestId, mockMessage);
           }
         }
         return new Response('Not found', { status: 404 });
@@ -506,7 +458,7 @@ describe('A2AClient Authentication Tests', () => {
             skills: []
           };
           
-          return createFreshResponse(1, mockAgentCard);
+          return createAgentCardResponse(mockAgentCard);
         }
         
         if (url.includes('/api')) {
@@ -514,13 +466,9 @@ describe('A2AClient Authentication Tests', () => {
           
           // Return 401 with WWW-Authenticate header
           const requestId = extractRequestId(options);
-          const response = createFreshResponse(requestId, {
-            jsonrpc: '2.0',
-            error: {
-              code: -32001,
-              message: 'Authentication required'
-            },
-            id: requestId
+          const response = createResponse(requestId, undefined, {
+            code: -32001,
+            message: 'Authentication required'
           }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
           
           capturedResponse = response;
@@ -577,7 +525,7 @@ describe('A2AClient Authentication Tests', () => {
       skills: []
     };
           
-          return createFreshResponse(1, mockAgentCard);
+          return createAgentCardResponse(mockAgentCard);
         }
         
         if (url.includes('/api')) {
@@ -587,13 +535,9 @@ describe('A2AClient Authentication Tests', () => {
           // First call: no auth header, return 401 with WWW-Authenticate
           if (!authHeader) {
             const requestId = extractRequestId(options);
-            return createFreshResponse(requestId, {
-              jsonrpc: '2.0',
-              error: {
-                code: -32001,
-                message: 'Authentication required'
-              },
-              id: requestId
+            return createResponse(requestId, undefined, {
+              code: -32001,
+              message: 'Authentication required'
             }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
           }
           
@@ -610,11 +554,7 @@ describe('A2AClient Authentication Tests', () => {
             };
             
             const requestId = extractRequestId(options);
-            return createFreshResponse(requestId, {
-              jsonrpc: '2.0',
-              result: mockMessage,
-              id: requestId
-            });
+            return createResponse(requestId, mockMessage);
           }
         }
         
@@ -671,7 +611,7 @@ describe('A2AClient Authentication Tests', () => {
             skills: []
           };
           
-          return createFreshResponse(1, mockAgentCard);
+          return createAgentCardResponse(mockAgentCard);
         }
         
         if (url.includes('/api')) {
@@ -690,11 +630,7 @@ describe('A2AClient Authentication Tests', () => {
           };
           
           const requestId = extractRequestId(options);
-          return createFreshResponse(requestId, {
-            jsonrpc: '2.0',
-            result: mockMessage,
-            id: requestId
-          });
+          return createResponse(requestId, mockMessage);
         }
         
         return new Response('Not found', { status: 404 });
@@ -753,7 +689,7 @@ describe('A2AClient Authentication Tests', () => {
             skills: []
           };
           
-          return createFreshResponse(1, mockAgentCard);
+          return createAgentCardResponse(mockAgentCard);
         }
         
         if (url.includes('/api')) {
@@ -923,7 +859,7 @@ describe('A2AClient Authentication Tests', () => {
             };
             
             const requestId = extractRequestId(options);
-            return createFreshResponse(requestId, {
+            return createResponse(requestId, {
               jsonrpc: '2.0',
               result: mockMessage,
               id: requestId
@@ -1032,22 +968,14 @@ describe('AuthHandlingFetch Tests', () => {
         if (callCount === 1) {
           // First call: return 401
           const requestId = extractRequestId(options);
-          return createFreshResponse(requestId, {
-            jsonrpc: '2.0',
-            error: {
-              code: -32001,
-              message: 'Authentication required'
-            },
-            id: requestId
+          return createResponse(requestId, undefined, {
+            code: -32001,
+            message: 'Authentication required'
           }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
         } else {
           // Second call: return success
           const requestId = extractRequestId(options);
-          return createFreshResponse(requestId, {
-            jsonrpc: '2.0',
-            result: { success: true },
-            id: requestId
-          });
+          return createResponse(requestId, { success: true });
         }
       });
       
@@ -1071,13 +999,9 @@ describe('AuthHandlingFetch Tests', () => {
       // Mock fetch to return 401
       const noRetryMockFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
         const requestId = extractRequestId(options);
-        return createFreshResponse(requestId, {
-          jsonrpc: '2.0',
-          error: {
-            code: -32001,
-            message: 'Authentication required'
-          },
-          id: requestId
+        return createResponse(requestId, undefined, {
+          code: -32001,
+          message: 'Authentication required'
         }, 401);
       });
       
@@ -1103,22 +1027,14 @@ describe('AuthHandlingFetch Tests', () => {
         if (callCount === 1) {
           // First call: return 403
           const requestId = extractRequestId(options);
-          return createFreshResponse(requestId, {
-            jsonrpc: '2.0',
-            error: {
-              code: -32001,
-              message: 'Forbidden'
-            },
-            id: requestId
+          return createResponse(requestId, undefined, {
+            code: -32001,
+            message: 'Forbidden'
           }, 403, { 'WWW-Authenticate': 'Agentic challenge123' });
         } else {
           // Second call: return success
           const requestId = extractRequestId(options);
-          return createFreshResponse(requestId, {
-            jsonrpc: '2.0',
-            result: { success: true },
-            id: requestId
-          });
+          return createResponse(requestId, { success: true });
         }
       });
       
@@ -1145,21 +1061,13 @@ describe('AuthHandlingFetch Tests', () => {
         callCount++;
         if (callCount === 1) {
           const requestId = extractRequestId(options);
-          return createFreshResponse(requestId, {
-            jsonrpc: '2.0',
-            error: {
-              code: -32001,
-              message: 'Authentication required'
-            },
-            id: requestId
+          return createResponse(requestId, undefined, {
+            code: -32001,
+            message: 'Authentication required'
           }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
         } else {
           const requestId = extractRequestId(options);
-          return createFreshResponse(requestId, {
-            jsonrpc: '2.0',
-            result: { success: true },
-            id: requestId
-          });
+          return createResponse(requestId, { success: true });
         }
       });
       
@@ -1184,13 +1092,9 @@ describe('AuthHandlingFetch Tests', () => {
       const failMockFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
         callCount++;
         const requestId = extractRequestId(options);
-        return createFreshResponse(requestId, {
-          jsonrpc: '2.0',
-          error: {
-            code: -32001,
-            message: 'Authentication required'
-          },
-          id: requestId
+        return createResponse(requestId, undefined, {
+          code: -32001,
+          message: 'Authentication required'
         }, 401);
       });
       

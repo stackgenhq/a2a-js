@@ -3,30 +3,10 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { A2AClient } from '../../src/client/client.js';
 import { AgentCard, MessageSendParams, TextPart, Message, SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
-import { extractRequestId } from './util.js';
+import { extractRequestId, createResponse, createAgentCardResponse } from './util.js';
 
 
-// Factory function to create fresh Response objects that can be read multiple times
-function createFreshResponse(id: number, result: any, status: number = 200, headers: Record<string, string> = {}): Response {
-  const defaultHeaders = { 'Content-Type': 'application/json' };
-  const responseHeaders = { ...defaultHeaders, ...headers };
-  
-  // Create a fresh body each time to avoid "Body is unusable" errors
-  const body = JSON.stringify(result);
-  
-  // Create a ReadableStream to ensure the body can be read multiple times
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode(body));
-      controller.close();
-    }
-  });
-  
-  return new Response(stream, {
-    status,
-    headers: responseHeaders
-  });
-}
+
 
 // Factory function to create fresh mock fetch functions
 function createMockFetch() {
@@ -55,7 +35,7 @@ function createFreshMockFetch(url: string, options?: RequestInit) {
         skills: []
       };
       
-      return createFreshResponse(1, mockAgentCard);
+      return createAgentCardResponse(mockAgentCard);
     }
     
     // Simulate RPC endpoint calls
@@ -76,11 +56,7 @@ function createFreshMockFetch(url: string, options?: RequestInit) {
       } as TextPart]
     };
     
-    return createFreshResponse(requestId, {
-      jsonrpc: '2.0',
-      result: mockMessage,
-      id: requestId
-    });
+    return createResponse(requestId, mockMessage);
 }
 
 // Helper function to check if response is a success response
@@ -247,20 +223,16 @@ describe('A2AClient Basic Tests', () => {
             },
             skills: []
           };
-          return createFreshResponse(1, mockAgentCard);
+          return createAgentCardResponse(mockAgentCard);
         }
         
         if (url.includes('/api')) {
           // Extract request ID from the request body
           const requestId = extractRequestId(options);
           
-          return createFreshResponse(requestId, {
-            jsonrpc: '2.0',
-            error: {
-              code: -32603,
-              message: 'Internal error'
-            },
-            id: requestId
+          return createResponse(requestId, undefined, {
+            code: -32603,
+            message: 'Internal error'
           }, 500);
         }
         
@@ -349,7 +321,7 @@ describe('A2AClient Basic Tests', () => {
             },
             skills: []
           };
-          return createFreshResponse(1, invalidAgentCard);
+          return createAgentCardResponse(invalidAgentCard);
         }
         return new Response('Not found', { status: 404 });
       });
@@ -400,11 +372,7 @@ describe('A2AClient Basic Tests', () => {
             } as TextPart]
           };
           
-          return createFreshResponse(body.id, {
-            jsonrpc: '2.0',
-            result: mockMessage,
-            id: body.id
-          });
+          return createResponse(body.id, mockMessage);
         }
         return createFreshMockFetch(url, options);
       });

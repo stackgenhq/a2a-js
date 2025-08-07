@@ -22,3 +22,90 @@ export function extractRequestId(options?: RequestInit): number {
     return 1;
   }
 }
+
+/**
+ * Factory function to create fresh Response objects for agent card endpoints.
+ * Agent cards are returned as raw JSON, not JSON-RPC responses.
+ * 
+ * @param data - The agent card data to include in the response
+ * @param status - HTTP status code (defaults to 200)
+ * @param headers - Additional headers to include in the response
+ * @returns A fresh Response object with the specified data
+ */
+export function createAgentCardResponse(
+  data: any,
+  status: number = 200,
+  headers: Record<string, string> = {}
+): Response {
+  const defaultHeaders = { 'Content-Type': 'application/json' };
+  const responseHeaders = { ...defaultHeaders, ...headers };
+  
+  // Create a fresh body each time to avoid "Body is unusable" errors
+  const body = JSON.stringify(data);
+  
+  // Create a ReadableStream to ensure the body can be read multiple times
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(body));
+      controller.close();
+    }
+  });
+  
+  return new Response(stream, {
+    status,
+    headers: responseHeaders
+  });
+}
+
+/**
+ * Factory function to create fresh Response objects that can be read multiple times.
+ * Creates a proper JSON-RPC 2.0 response structure.
+ * 
+ * @param id - The response ID (used for JSON-RPC responses)
+ * @param result - The result data to include in the response (for success responses)
+ * @param error - Optional error object for error responses (mutually exclusive with result)
+ * @param status - HTTP status code (defaults to 200 for success, 500 for errors)
+ * @param headers - Additional headers to include in the response
+ * @returns A fresh Response object with the specified data
+ */
+export function createResponse(
+  id: number, 
+  result?: any, 
+  error?: { code: number; message: string; data?: any },
+  status: number = 200, 
+  headers: Record<string, string> = {}
+): Response {
+  const defaultHeaders = { 'Content-Type': 'application/json' };
+  const responseHeaders = { ...defaultHeaders, ...headers };
+  
+  // Construct the JSON-RPC response structure
+  const jsonRpcResponse: any = {
+    jsonrpc: "2.0",
+    id: id
+  };
+  
+  // Add either result or error (mutually exclusive)
+  if (error) {
+    jsonRpcResponse.error = error;
+    // Use provided status or default to 500 for errors
+    status = status !== 200 ? status : 500;
+  } else {
+    jsonRpcResponse.result = result;
+  }
+  
+  // Create a fresh body each time to avoid "Body is unusable" errors
+  const body = JSON.stringify(jsonRpcResponse);
+  
+  // Create a ReadableStream to ensure the body can be read multiple times
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(body));
+      controller.close();
+    }
+  });
+  
+  return new Response(stream, {
+    status,
+    headers: responseHeaders
+  });
+}

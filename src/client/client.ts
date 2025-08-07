@@ -86,6 +86,7 @@ export class A2AClient {
       this.serviceEndpointUrl = agentCard.url; // Cache the service endpoint URL from the agent card
       return agentCard;
     } catch (error) {
+      console.error("Error fetching or parsing Agent Card:");
       // Allow the promise to reject so users of agentCardPromise can handle it.
       throw error;
     }
