@@ -97,10 +97,6 @@ function createFreshMockFetch(url: string, options?: RequestInit) {
   return createResponse(requestId, mockMessage);
 }
 
-
-// Mock fetch implementation
-let mockFetch: sinon.SinonStub;
-
 // Mock authentication handler that simulates generating tokens and confirming signatures
 class MockAuthHandler implements AuthenticationHandler {
   private authorization: string | null = null;
@@ -142,6 +138,7 @@ function isSuccessResponse(response: SendMessageResponse): response is SendMessa
 describe('A2AClient Authentication Tests', () => {
   let client: A2AClient;
   let authHandler: MockAuthHandler;
+  let mockFetch: sinon.SinonStub;
 
   beforeEach(() => {    
     // Create a fresh mock fetch for each test
