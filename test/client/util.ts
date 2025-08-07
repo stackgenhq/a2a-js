@@ -109,3 +109,49 @@ export function createResponse(
     headers: responseHeaders
   });
 }
+
+/**
+ * Factory function to create mock agent cards for testing.
+ * 
+ * @param options - Configuration options for the mock agent card
+ * @param options.name - Agent name (defaults to 'Test Agent')
+ * @param options.description - Agent description (defaults to 'A test agent for testing')
+ * @param options.url - Service endpoint URL (defaults to 'https://test-agent.example.com/api')
+ * @param options.protocolVersion - Protocol version (defaults to '1.0.0')
+ * @param options.version - Agent version (defaults to '1.0.0')
+ * @param options.defaultInputModes - Default input modes (defaults to ['text'])
+ * @param options.defaultOutputModes - Default output modes (defaults to ['text'])
+ * @param options.capabilities - Agent capabilities (defaults to { streaming: true, pushNotifications: true })
+ * @param options.skills - Agent skills (defaults to [])
+ * @returns A mock AgentCard object
+ */
+export function createMockAgentCard(options: {
+  name?: string;
+  description?: string;
+  url?: string;
+  protocolVersion?: string;
+  version?: string;
+  defaultInputModes?: string[];
+  defaultOutputModes?: string[];
+  capabilities?: {
+    streaming?: boolean;
+    pushNotifications?: boolean;
+  };
+  skills?: any[];
+} = {}): any {
+  return {
+    name: options.name ?? 'Test Agent',
+    description: options.description ?? 'A test agent for testing',
+    protocolVersion: options.protocolVersion ?? '1.0.0',
+    version: options.version ?? '1.0.0',
+    url: options.url ?? 'https://test-agent.example.com/api',
+    defaultInputModes: options.defaultInputModes ?? ['text'],
+    defaultOutputModes: options.defaultOutputModes ?? ['text'],
+    capabilities: {
+      streaming: options.capabilities?.streaming ?? true,
+      pushNotifications: options.capabilities?.pushNotifications ?? true,
+      ...options.capabilities
+    },
+    skills: options.skills ?? []
+  };
+}

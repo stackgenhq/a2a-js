@@ -3,7 +3,7 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { A2AClient } from '../../src/client/client.js';
 import { AgentCard, MessageSendParams, TextPart, Message, SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
-import { extractRequestId, createResponse, createAgentCardResponse } from './util.js';
+import { extractRequestId, createResponse, createAgentCardResponse, createMockAgentCard } from './util.js';
 
 
 
@@ -20,20 +20,9 @@ function createMockFetch() {
 function createFreshMockFetch(url: string, options?: RequestInit) {
     // Simulate agent card fetch
     if (url.includes('.well-known/agent.json')) {
-      const mockAgentCard: AgentCard = {
-        name: 'Test Agent',
-        description: 'A test agent for basic client testing',
-        protocolVersion: '1.0.0',
-        version: '1.0.0',
-        url: 'https://test-agent.example.com/api',
-        defaultInputModes: ['text'],
-        defaultOutputModes: ['text'],
-        capabilities: {
-          streaming: true,
-          pushNotifications: true
-        },
-        skills: []
-      };
+      const mockAgentCard = createMockAgentCard({
+        description: 'A test agent for basic client testing'
+      });
       
       return createAgentCardResponse(mockAgentCard);
     }
@@ -209,20 +198,9 @@ describe('A2AClient Basic Tests', () => {
     it('should handle message sending errors', async () => {
       const errorFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
         if (url.includes('.well-known/agent.json')) {
-          const mockAgentCard: AgentCard = {
-            name: 'Test Agent',
-            description: 'A test agent for error testing',
-            protocolVersion: '1.0.0',
-            version: '1.0.0',
-            url: 'https://test-agent.example.com/api',
-            defaultInputModes: ['text'],
-            defaultOutputModes: ['text'],
-            capabilities: {
-              streaming: true,
-              pushNotifications: true
-            },
-            skills: []
-          };
+          const mockAgentCard = createMockAgentCard({
+            description: 'A test agent for error testing'
+          });
           return createAgentCardResponse(mockAgentCard);
         }
         

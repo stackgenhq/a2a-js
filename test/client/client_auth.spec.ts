@@ -4,7 +4,7 @@ import sinon from 'sinon';
 import { A2AClient } from '../../src/client/client.js';
 import { AuthenticationHandler, HttpHeaders, AuthHandlingFetch } from '../../src/client/auth-handler.js';
 import { AgentCard, MessageSendParams, TextPart, Message, SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
-import { extractRequestId, createResponse, createAgentCardResponse } from './util.js';
+import { extractRequestId, createResponse, createAgentCardResponse, createMockAgentCard } from './util.js';
 
 
 
@@ -54,20 +54,9 @@ function createMockFetch() {
 function createFreshMockFetch(url: string, options?: RequestInit) {
   // Simulate agent card fetch
   if (url.includes('.well-known/agent.json')) {
-    const mockAgentCard: AgentCard = {
-      name: 'Test Agent',
-      description: 'A test agent for authentication testing',
-      protocolVersion: '1.0.0',
-      version: '1.0.0',
-      url: 'https://test-agent.example.com/api',
-      defaultInputModes: ['text'],
-      defaultOutputModes: ['text'],
-      capabilities: {
-        streaming: true,
-        pushNotifications: true
-      },
-      skills: []
-    };
+    const mockAgentCard = createMockAgentCard({
+      description: 'A test agent for authentication testing'
+    });
     
     return createAgentCardResponse(mockAgentCard);
   }
@@ -310,20 +299,9 @@ describe('A2AClient Authentication Tests', () => {
       mockFetch.reset();
       mockFetch.callsFake(async (url: string, options?: RequestInit) => {
         if (url.includes('.well-known/agent.json')) {
-          const mockAgentCard: AgentCard = {
-            name: 'Test Agent',
-            description: 'A test agent for authentication testing',
-            protocolVersion: '1.0.0',
-            version: '1.0.0',
-            url: 'https://test-agent.example.com/api',
-            defaultInputModes: ['text'],
-            defaultOutputModes: ['text'],
-            capabilities: {
-              streaming: true,
-              pushNotifications: true
-            },
-            skills: []
-          };
+          const mockAgentCard = createMockAgentCard({
+            description: 'A test agent for authentication testing'
+          });
           
           return createAgentCardResponse(mockAgentCard);
         }
@@ -443,20 +421,9 @@ describe('A2AClient Authentication Tests', () => {
       let capturedResponse: Response | null = null;
       const headerTestFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
         if (url.includes('.well-known/agent.json')) {
-          const mockAgentCard: AgentCard = {
-            name: 'Test Agent',
-            description: 'A test agent for authentication testing',
-            protocolVersion: '1.0.0',
-            version: '1.0.0',
-            url: 'https://test-agent.example.com/api',
-            defaultInputModes: ['text'],
-            defaultOutputModes: ['text'],
-            capabilities: {
-              streaming: true,
-              pushNotifications: true
-            },
-            skills: []
-          };
+          const mockAgentCard = createMockAgentCard({
+            description: 'A test agent for authentication testing'
+          });
           
           return createAgentCardResponse(mockAgentCard);
         }
@@ -510,20 +477,9 @@ describe('A2AClient Authentication Tests', () => {
       let capturedAuthHeaders: string[] = [];
       const authHeaderTestFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
         if (url.includes('.well-known/agent.json')) {
-              const mockAgentCard: AgentCard = {
-      name: 'Test Agent',
-      description: 'A test agent for authentication testing',
-      protocolVersion: '1.0.0',
-      version: '1.0.0',
-      url: 'https://test-agent.example.com/api',
-      defaultInputModes: ['text'],
-      defaultOutputModes: ['text'],
-      capabilities: {
-        streaming: true,
-        pushNotifications: true
-      },
-      skills: []
-    };
+          const mockAgentCard = createMockAgentCard({
+            description: 'A test agent for authentication testing'
+          });
           
           return createAgentCardResponse(mockAgentCard);
         }
@@ -596,20 +552,9 @@ describe('A2AClient Authentication Tests', () => {
       let capturedAuthHeaders: string[] = [];
       const noAuthRequiredFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
         if (url.includes('.well-known/agent.json')) {
-          const mockAgentCard: AgentCard = {
-            name: 'Test Agent',
-            description: 'A test agent that does not require authentication',
-            protocolVersion: '1.0.0',
-            version: '1.0.0',
-            url: 'https://test-agent.example.com/api',
-            defaultInputModes: ['text'],
-            defaultOutputModes: ['text'],
-            capabilities: {
-              streaming: true,
-              pushNotifications: true
-            },
-            skills: []
-          };
+          const mockAgentCard = createMockAgentCard({
+            description: 'A test agent that does not require authentication'
+          });
           
           return createAgentCardResponse(mockAgentCard);
         }
@@ -674,20 +619,9 @@ describe('A2AClient Authentication Tests', () => {
       // Create a mock that returns 401 without authHandler
       const noAuthHandlerFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
         if (url.includes('.well-known/agent.json')) {
-          const mockAgentCard: AgentCard = {
-            name: 'Test Agent',
-            description: 'A test agent that requires authentication',
-            protocolVersion: '1.0.0',
-            version: '1.0.0',
-            url: 'https://test-agent.example.com/api',
-            defaultInputModes: ['text'],
-            defaultOutputModes: ['text'],
-            capabilities: {
-              streaming: true,
-              pushNotifications: true
-            },
-            skills: []
-          };
+          const mockAgentCard = createMockAgentCard({
+            description: 'A test agent that requires authentication'
+          });
           
           return createAgentCardResponse(mockAgentCard);
         }
