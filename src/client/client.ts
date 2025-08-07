@@ -90,7 +90,6 @@ export class A2AClient {
       this.serviceEndpointUrl = agentCard.url; // Cache the service endpoint URL from the agent card
       return agentCard;
     } catch (error) {
-      console.error("Error fetching or parsing Agent Card:");
       // Allow the promise to reject so users of agentCardPromise can handle it.
       throw error;
     }
@@ -197,7 +196,6 @@ export class A2AClient {
 
     if (rpcResponse.id !== requestId) {
       // This is a significant issue for request-response matching.
-      console.error(`CRITICAL: RPC response ID mismatch for method ${method}. Expected ${requestId}, got ${rpcResponse.id}. This may lead to incorrect response handling.`);
       // Depending on strictness, one might throw an error here.
       // throw new Error(`RPC response ID mismatch for method ${method}. Expected ${requestId}, got ${rpcResponse.id}`);
     }
