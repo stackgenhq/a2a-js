@@ -67,6 +67,20 @@ function createMockFetch() {
   });
 }
 
+// Helper function to extract request ID from request body
+function extractRequestId(options?: RequestInit): number {
+  if (options?.body) {
+    try {
+      const requestBody = JSON.parse(options.body as string);
+      return requestBody.id || 1;
+    } catch (e) {
+      // If parsing fails, use default ID
+      return 1;
+    }
+  }
+  return 1;
+}
+
 // Helper function to create fresh mock fetch responses
 function createFreshMockFetch(url: string, options?: RequestInit) {
   // Simulate agent card fetch
@@ -93,42 +107,45 @@ function createFreshMockFetch(url: string, options?: RequestInit) {
   if (!url.includes('/api'))
     return new Response('Not found', { status: 404 });
 
+  const requestId = extractRequestId(options);
   const authHeader = options?.headers?.['Authorization'] as string;
   
   // If there is no auth header, return a 401 with a challenge that needs to be signed (e.g. using a private key)
   if (!authHeader) {
     const challenge = challengeManager.createChallenge();
 
-    return createFreshResponse(1, {
+    return createFreshResponse(requestId, {
       jsonrpc: '2.0',
       error: {
         code: -32001,
         message: 'Authentication required'
       },
-      id: 1
+      id: requestId
     }, 401, { 'WWW-Authenticate': `Agentic ${challenge}` });
   }
 
   // We have an auth header, so make sure the scheme is correct
   const [ scheme, params ] = authHeader.split(/\s+/);
   if (scheme !== 'Agentic') {
-    return createFreshResponse(1, {
+    return createFreshResponse(requestId, {
       jsonrpc: '2.0',
       error: {
         code: -32001,
         message: 'Invalid authorization scheme'
-      }
+      },
+      id: requestId
     }, 401);
   }
 
   // If an auth header is provided, make sure it's the signed challenge
   if (!challengeManager.verifyToken(params)) {
-    return createFreshResponse(1, {
+    return createFreshResponse(requestId, {
       jsonrpc: '2.0',
       error: {
         code: -32001,
         message: 'Invalid authorization token'
-      }
+      },
+      id: requestId
     }, 401);
   }
 
@@ -143,10 +160,10 @@ function createFreshMockFetch(url: string, options?: RequestInit) {
     } as TextPart]
   };
   
-  return createFreshResponse(1, {
+  return createFreshResponse(requestId, {
     jsonrpc: '2.0',
     result: mockMessage,
-    id: 1
+    id: requestId
   });
 }
 
@@ -302,10 +319,11 @@ describe('A2AClient Authentication Tests', () => {
               } as TextPart]
             };
             
-            return createFreshResponse(1, {
+            const requestId = extractRequestId(options);
+            return createFreshResponse(requestId, {
               jsonrpc: '2.0',
               result: mockMessage,
-              id: 1
+              id: requestId
             });
           }
         }
@@ -366,13 +384,14 @@ describe('A2AClient Authentication Tests', () => {
           
           // If no auth header, return 401 to trigger auth flow
           if (!authHeader) {
-            return createFreshResponse(1, {
+            const requestId = extractRequestId(options);
+            return createFreshResponse(requestId, {
               jsonrpc: '2.0',
               error: {
                 code: -32001,
                 message: 'Authentication required'
               },
-              id: 1
+              id: requestId
             }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
           }
           
@@ -388,10 +407,11 @@ describe('A2AClient Authentication Tests', () => {
               } as TextPart]
             };
             
-            return createFreshResponse(1, {
+            const requestId = extractRequestId(options);
+            return createFreshResponse(requestId, {
               jsonrpc: '2.0',
               result: mockMessage,
-              id: 1
+              id: requestId
             });
           }
         }
@@ -504,13 +524,14 @@ describe('A2AClient Authentication Tests', () => {
           const authHeader = options?.headers?.['Authorization'] as string;
           
           // Return 401 with WWW-Authenticate header
-          const response = createFreshResponse(1, {
+          const requestId = extractRequestId(options);
+          const response = createFreshResponse(requestId, {
             jsonrpc: '2.0',
             error: {
               code: -32001,
               message: 'Authentication required'
             },
-            id: 1
+            id: requestId
           }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
           
           capturedResponse = response;
@@ -576,13 +597,14 @@ describe('A2AClient Authentication Tests', () => {
           
           // First call: no auth header, return 401 with WWW-Authenticate
           if (!authHeader) {
-            return createFreshResponse(1, {
+            const requestId = extractRequestId(options);
+            return createFreshResponse(requestId, {
               jsonrpc: '2.0',
               error: {
                 code: -32001,
                 message: 'Authentication required'
               },
-              id: 1
+              id: requestId
             }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
           }
           
@@ -598,10 +620,11 @@ describe('A2AClient Authentication Tests', () => {
               } as TextPart]
             };
             
-            return createFreshResponse(1, {
+            const requestId = extractRequestId(options);
+            return createFreshResponse(requestId, {
               jsonrpc: '2.0',
               result: mockMessage,
-              id: 1
+              id: requestId
             });
           }
         }
@@ -677,10 +700,11 @@ describe('A2AClient Authentication Tests', () => {
             } as TextPart]
           };
           
-          return createFreshResponse(1, {
+          const requestId = extractRequestId(options);
+          return createFreshResponse(requestId, {
             jsonrpc: '2.0',
             result: mockMessage,
-            id: 1
+            id: requestId
           });
         }
         
@@ -746,13 +770,14 @@ describe('A2AClient Authentication Tests', () => {
         if (url.includes('/api')) {
           // Always return 401 to simulate authentication required
           // Create a new Response each time to avoid body reuse issues
+          const requestId = extractRequestId(options);
           const errorBody = JSON.stringify({
             jsonrpc: '2.0',
             error: {
               code: -32001,
               message: 'Authentication required'
             },
-            id: 1
+            id: requestId
           });
           
           // Create a Response that can be read multiple times
@@ -908,10 +933,11 @@ describe('A2AClient Authentication Tests', () => {
               } as TextPart]
             };
             
-            return createFreshResponse(1, {
+            const requestId = extractRequestId(options);
+            return createFreshResponse(requestId, {
               jsonrpc: '2.0',
               result: mockMessage,
-              id: 1
+              id: requestId
             });
           }
         }
@@ -1016,20 +1042,22 @@ describe('AuthHandlingFetch Tests', () => {
         callCount++;
         if (callCount === 1) {
           // First call: return 401
-          return createFreshResponse(1, {
+          const requestId = extractRequestId(options);
+          return createFreshResponse(requestId, {
             jsonrpc: '2.0',
             error: {
               code: -32001,
               message: 'Authentication required'
             },
-            id: 1
+            id: requestId
           }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
         } else {
           // Second call: return success
-          return createFreshResponse(1, {
+          const requestId = extractRequestId(options);
+          return createFreshResponse(requestId, {
             jsonrpc: '2.0',
             result: { success: true },
-            id: 1
+            id: requestId
           });
         }
       });
@@ -1052,14 +1080,15 @@ describe('AuthHandlingFetch Tests', () => {
       const noRetryFetch = new AuthHandlingFetch(mockFetch, noRetryAuthHandler);
       
       // Mock fetch to return 401
-      const noRetryMockFetch = sinon.stub().callsFake(async () => {
-        return createFreshResponse(1, {
+      const noRetryMockFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
+        const requestId = extractRequestId(options);
+        return createFreshResponse(requestId, {
           jsonrpc: '2.0',
           error: {
             code: -32001,
             message: 'Authentication required'
           },
-          id: 1
+          id: requestId
         }, 401);
       });
       
@@ -1084,20 +1113,22 @@ describe('AuthHandlingFetch Tests', () => {
         callCount++;
         if (callCount === 1) {
           // First call: return 403
-          return createFreshResponse(1, {
+          const requestId = extractRequestId(options);
+          return createFreshResponse(requestId, {
             jsonrpc: '2.0',
             error: {
               code: -32001,
               message: 'Forbidden'
             },
-            id: 1
+            id: requestId
           }, 403, { 'WWW-Authenticate': 'Agentic challenge123' });
         } else {
           // Second call: return success
-          return createFreshResponse(1, {
+          const requestId = extractRequestId(options);
+          return createFreshResponse(requestId, {
             jsonrpc: '2.0',
             result: { success: true },
-            id: 1
+            id: requestId
           });
         }
       });
@@ -1124,19 +1155,21 @@ describe('AuthHandlingFetch Tests', () => {
       const successMockFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
         callCount++;
         if (callCount === 1) {
-          return createFreshResponse(1, {
+          const requestId = extractRequestId(options);
+          return createFreshResponse(requestId, {
             jsonrpc: '2.0',
             error: {
               code: -32001,
               message: 'Authentication required'
             },
-            id: 1
+            id: requestId
           }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
         } else {
-          return createFreshResponse(1, {
+          const requestId = extractRequestId(options);
+          return createFreshResponse(requestId, {
             jsonrpc: '2.0',
             result: { success: true },
-            id: 1
+            id: requestId
           });
         }
       });
@@ -1161,13 +1194,14 @@ describe('AuthHandlingFetch Tests', () => {
       let callCount = 0;
       const failMockFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
         callCount++;
-        return createFreshResponse(1, {
+        const requestId = extractRequestId(options);
+        return createFreshResponse(requestId, {
           jsonrpc: '2.0',
           error: {
             code: -32001,
             message: 'Authentication required'
           },
-          id: 1
+          id: requestId
         }, 401);
       });
       
