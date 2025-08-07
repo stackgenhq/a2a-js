@@ -31,7 +31,6 @@ import {
   A2AError,
   SendMessageSuccessResponse
 } from '../types.js'; // Assuming schema.ts is in the same directory or appropriately pathed
-import { AuthenticationHandler } from './auth-handler.js';
 
 // Helper type for the data yielded by streaming methods
 type A2AStreamEventData = Message | Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent;
@@ -39,7 +38,6 @@ type A2AStreamEventData = Message | Task | TaskStatusUpdateEvent | TaskArtifactU
 export interface A2AClientOptions {
   agentCardPath?: string;
   fetchImpl?: typeof fetch;
-  authHandler?: AuthenticationHandler;
 }
 
 /**
@@ -51,7 +49,6 @@ export class A2AClient {
   private requestIdCounter: number = 1;
   private serviceEndpointUrl?: string; // To be populated from AgentCard after fetching
   private fetchImpl: typeof fetch;
-  private authHandler?: AuthenticationHandler;
 
   /**
    * Constructs an A2AClient instance.
@@ -63,7 +60,6 @@ export class A2AClient {
    */
   constructor(agentBaseUrl: string, options?: A2AClientOptions) {
     this.fetchImpl = options?.fetchImpl ?? fetch;
-    this.authHandler = options?.authHandler;
     this.agentCardPromise = this._fetchAndCacheAgentCard( agentBaseUrl, options?.agentCardPath );
   }
 
@@ -169,13 +165,9 @@ export class A2AClient {
     const httpResponse = await this._fetchRpc( endpoint, rpcRequest );
 
     if (!httpResponse.ok) {
-      // Clone the response before reading it to avoid "Body has already been read" errors
-      // when the auth handler needs to retry the request
-      const responseClone = httpResponse.clone();
-      
       let errorBodyText = '(empty or non-JSON response)';
       try {
-        errorBodyText = await responseClone.text();
+        errorBodyText = await httpResponse.text();
         const errorJson = JSON.parse(errorBodyText);
         // If the body is a valid JSON-RPC error response, let it be handled by the standard parsing below.
         // However, if it's not even a JSON-RPC structure but still an error, throw based on HTTP status.
