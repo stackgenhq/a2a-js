@@ -3,7 +3,7 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { A2AClient } from '../../src/client/client.js';
 import { AgentCard, MessageSendParams, TextPart, Message, SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
-import { extractRequestId, createResponse, createAgentCardResponse, createMockAgentCard } from './util.js';
+import { extractRequestId, createResponse, createAgentCardResponse, createMockAgentCard, createMockMessage } from './util.js';
 
 
 
@@ -35,15 +35,7 @@ function createFreshMockFetch(url: string, options?: RequestInit) {
     const requestId = extractRequestId(options);
 
     // Basic RPC response with matching request ID
-    const mockMessage: Message = {
-      kind: 'message',
-      messageId: 'msg-123',
-      role: 'user',
-      parts: [{
-        kind: 'text',
-        text: 'Hello, agent!'
-      } as TextPart]
-    };
+    const mockMessage = createMockMessage();
     
     return createResponse(requestId, mockMessage);
 }
@@ -340,15 +332,10 @@ describe('A2AClient Basic Tests', () => {
           capturedRequestIds.push(body.id);
           
           // Return response with matching ID
-          const mockMessage: Message = {
-            kind: 'message',
+          const mockMessage = createMockMessage({
             messageId: `msg-${body.id}`,
-            role: 'user',
-            parts: [{
-              kind: 'text',
-              text: 'Test message'
-            } as TextPart]
-          };
+            text: 'Test message'
+          });
           
           return createResponse(body.id, mockMessage);
         }

@@ -4,7 +4,7 @@ import sinon from 'sinon';
 import { A2AClient } from '../../src/client/client.js';
 import { AuthenticationHandler, HttpHeaders, AuthHandlingFetch } from '../../src/client/auth-handler.js';
 import { AgentCard, MessageSendParams, TextPart, Message, SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
-import { extractRequestId, createResponse, createAgentCardResponse, createMockAgentCard } from './util.js';
+import { extractRequestId, createResponse, createAgentCardResponse, createMockAgentCard, createMessageParams, createMockMessage } from './util.js';
 
 
 // Challenge manager class for authentication testing
@@ -92,15 +92,7 @@ function createFreshMockFetch(url: string, options?: RequestInit) {
   }
 
   // All good, return a success response
-  const mockMessage: Message = {
-    kind: 'message',
-    messageId: 'msg-123',
-    role: 'user',
-    parts: [{
-      kind: 'text',
-      text: 'Hello, agent!'
-    } as TextPart]
-  };
+  const mockMessage = createMockMessage();
   
   return createResponse(requestId, mockMessage);
 }
@@ -169,17 +161,10 @@ describe('A2AClient Authentication Tests', () => {
 
   describe('Authentication Flow', () => {
     it('should handle authentication flow correctly', async () => {
-      const messageParams: MessageSendParams = {
-        message: {
-          kind: 'message',
-          messageId: 'test-msg-1',
-          role: 'user',
-          parts: [{
-            kind: 'text',
-            text: 'Hello, agent!'
-          } as TextPart]
-        }
-      };
+      const messageParams = createMessageParams({
+        messageId: 'test-msg-1',
+        text: 'Hello, agent!'
+      });
 
       // This should trigger the authentication flow
       const result = await client.sendMessage(messageParams);
@@ -224,17 +209,10 @@ describe('A2AClient Authentication Tests', () => {
     });
 
     it('should reuse authentication token for subsequent requests', async () => {
-      const messageParams: MessageSendParams = {
-        message: {
-          kind: 'message',
-          messageId: 'test-msg-2',
-          role: 'user',
-          parts: [{
-            kind: 'text',
-            text: 'Second message'
-          } as TextPart]
-        }
-      };
+      const messageParams = createMessageParams({
+        messageId: 'test-msg-2',
+        text: 'Second message'
+      });
 
       // First request - should trigger auth flow
       await client.sendMessage(messageParams);
@@ -247,15 +225,10 @@ describe('A2AClient Authentication Tests', () => {
         if (url.includes('/api')) {
           const authHeader = options?.headers?.['Authorization'] as string;
           if (authHeader && authHeader.startsWith('Agentic ')) {
-            const mockMessage: Message = {
-              kind: 'message',
+            const mockMessage = createMockMessage({
               messageId: 'msg-second',
-              role: 'user',
-              parts: [{
-                kind: 'text',
-                text: 'Second message'
-              } as TextPart]
-            };
+              text: 'Second message'
+            });
             
             const requestId = extractRequestId(options);
             return createResponse(requestId, mockMessage);
@@ -279,17 +252,10 @@ describe('A2AClient Authentication Tests', () => {
     });
 
     it('should handle multiple concurrent requests with authentication', async () => {
-      const messageParams: MessageSendParams = {
-        message: {
-          kind: 'message',
-          messageId: 'test-msg-3',
-          role: 'user',
-          parts: [{
-            kind: 'text',
-            text: 'Concurrent message'
-          } as TextPart]
-        }
-      };
+      const messageParams = createMessageParams({
+        messageId: 'test-msg-3',
+        text: 'Concurrent message'
+      });
 
       // Create a new mock that handles concurrent requests properly
       mockFetch.reset();
@@ -316,15 +282,10 @@ describe('A2AClient Authentication Tests', () => {
           
           // If auth header is present, return success
           if (authHeader.startsWith('Agentic ')) {
-            const mockMessage: Message = {
-              kind: 'message',
+            const mockMessage = createMockMessage({
               messageId: `msg-concurrent-${Date.now()}`,
-              role: 'user',
-              parts: [{
-                kind: 'text',
-                text: 'Concurrent message'
-              } as TextPart]
-            };
+              text: 'Concurrent message'
+            });
             
             const requestId = extractRequestId(options);
             return createResponse(requestId, mockMessage);
@@ -361,17 +322,10 @@ describe('A2AClient Authentication Tests', () => {
         onSuccess: sinon.spy(authHandler, 'onSuccess')
       };
 
-      const messageParams: MessageSendParams = {
-        message: {
-          kind: 'message',
-          messageId: 'test-msg-4',
-          role: 'user',
-          parts: [{
-            kind: 'text',
-            text: 'Test auth handler'
-          } as TextPart]
-        }
-      };
+      const messageParams = createMessageParams({
+        messageId: 'test-msg-4',
+        text: 'Test auth handler'
+      });
 
       await client.sendMessage(messageParams);
 
@@ -391,17 +345,10 @@ describe('A2AClient Authentication Tests', () => {
         fetchImpl: mockFetch
       });
 
-      const messageParams: MessageSendParams = {
-        message: {
-          kind: 'message',
-          messageId: 'test-msg-5',
-          role: 'user',
-          parts: [{
-            kind: 'text',
-            text: 'No retry test'
-          } as TextPart]
-        }
-      };
+      const messageParams = createMessageParams({
+        messageId: 'test-msg-5',
+        text: 'No retry test'
+      });
 
       // This should fail because we're not retrying with auth
       try {
@@ -446,17 +393,10 @@ describe('A2AClient Authentication Tests', () => {
         fetchImpl: headerTestFetch
       });
 
-      const messageParams: MessageSendParams = {
-        message: {
-          kind: 'message',
-          messageId: 'test-msg-www-auth',
-          role: 'user',
-          parts: [{
-            kind: 'text',
-            text: 'Test WWW-Authenticate header'
-          } as TextPart]
-        }
-      };
+      const messageParams = createMessageParams({
+        messageId: 'test-msg-www-auth',
+        text: 'Test WWW-Authenticate header'
+      });
 
       try {
         await clientHeaderTest.sendMessage(messageParams);
@@ -495,15 +435,10 @@ describe('A2AClient Authentication Tests', () => {
           
           // Second call: with Agentic auth header, return success
           if (authHeader.startsWith('Agentic ')) {
-            const mockMessage: Message = {
-              kind: 'message',
+            const mockMessage = createMockMessage({
               messageId: 'msg-auth-test',
-              role: 'user',
-              parts: [{
-                kind: 'text',
-                text: 'Test auth header parsing'
-              } as TextPart]
-            };
+              text: 'Test auth header parsing'
+            });
             
             const requestId = extractRequestId(options);
             return createResponse(requestId, mockMessage);
@@ -518,17 +453,10 @@ describe('A2AClient Authentication Tests', () => {
         fetchImpl: authHandlingFetch
       });
 
-      const messageParams: MessageSendParams = {
-        message: {
-          kind: 'message',
-          messageId: 'test-msg-auth-parse',
-          role: 'user',
-          parts: [{
-            kind: 'text',
-            text: 'Test auth header parsing'
-          } as TextPart]
-        }
-      };
+      const messageParams = createMessageParams({
+        messageId: 'test-msg-auth-parse',
+        text: 'Test auth header parsing'
+      });
 
       // This should trigger the auth flow and succeed
       const result = await clientAuthTest.sendMessage(messageParams);
@@ -560,15 +488,10 @@ describe('A2AClient Authentication Tests', () => {
           capturedAuthHeaders.push(authHeader || '');
           
           // Always return success without requiring authentication
-          const mockMessage: Message = {
-            kind: 'message',
+          const mockMessage = createMockMessage({
             messageId: 'msg-no-auth-required',
-            role: 'user',
-            parts: [{
-              kind: 'text',
-              text: 'Test without authentication'
-            } as TextPart]
-          };
+            text: 'Test without authentication'
+          });
           
           const requestId = extractRequestId(options);
           return createResponse(requestId, mockMessage);
@@ -582,17 +505,10 @@ describe('A2AClient Authentication Tests', () => {
         fetchImpl: noAuthRequiredFetch
       });
 
-      const messageParams: MessageSendParams = {
-        message: {
-          kind: 'message',
-          messageId: 'test-msg-no-auth',
-          role: 'user',
-          parts: [{
-            kind: 'text',
-            text: 'Test without authentication'
-          } as TextPart]
-        }
-      };
+      const messageParams = createMessageParams({
+        messageId: 'test-msg-no-auth',
+        text: 'Test without authentication'
+      });
 
       // This should succeed without any authentication flow
       const result = await clientNoAuth.sendMessage(messageParams);
@@ -660,17 +576,10 @@ describe('A2AClient Authentication Tests', () => {
         fetchImpl: noAuthHandlerFetch
       });
 
-      const messageParams: MessageSendParams = {
-        message: {
-          kind: 'message',
-          messageId: 'test-msg-no-auth-handler',
-          role: 'user',
-          parts: [{
-            kind: 'text',
-            text: 'Test without auth handler'
-          } as TextPart]
-        }
-      };
+      const messageParams = createMessageParams({
+        messageId: 'test-msg-no-auth-handler',
+        text: 'Test without auth handler'
+      });
 
       // The client should return a JSON-RPC error response rather than throwing an error
       const result = await clientNoAuthHandler.sendMessage(messageParams);
@@ -695,17 +604,10 @@ describe('A2AClient Authentication Tests', () => {
         fetchImpl: networkErrorFetch
       });
 
-      const messageParams: MessageSendParams = {
-        message: {
-          kind: 'message',
-          messageId: 'test-msg-6',
-          role: 'user',
-          parts: [{
-            kind: 'text',
-            text: 'Network error test'
-          } as TextPart]
-        }
-      };
+      const messageParams = createMessageParams({
+        messageId: 'test-msg-6',
+        text: 'Network error test'
+      });
 
       try {
         await clientWithNetworkError.sendMessage(messageParams);
@@ -732,17 +634,10 @@ describe('A2AClient Authentication Tests', () => {
         fetchImpl: malformedFetch
       });
 
-      const messageParams: MessageSendParams = {
-        message: {
-          kind: 'message',
-          messageId: 'test-msg-7',
-          role: 'user',
-          parts: [{
-            kind: 'text',
-            text: 'Malformed JSON test'
-          } as TextPart]
-        }
-      };
+      const messageParams = createMessageParams({
+        messageId: 'test-msg-7',
+        text: 'Malformed JSON test'
+      });
 
       try {
         await clientWithMalformed.sendMessage(messageParams);
@@ -755,17 +650,10 @@ describe('A2AClient Authentication Tests', () => {
 
   describe('Agent Card Caching', () => {
     it('should cache agent card and reuse service endpoint', async () => {
-      const messageParams: MessageSendParams = {
-        message: {
-          kind: 'message',
-          messageId: 'test-msg-8',
-          role: 'user',
-          parts: [{
-            kind: 'text',
-            text: 'Agent card caching test'
-          } as TextPart]
-        }
-      };
+      const messageParams = createMessageParams({
+        messageId: 'test-msg-8',
+        text: 'Agent card caching test'
+      });
 
       // First request - should fetch agent card
       await client.sendMessage(messageParams);
@@ -778,15 +666,10 @@ describe('A2AClient Authentication Tests', () => {
         if (url.includes('/api')) {
           const authHeader = options?.headers?.['Authorization'] as string;
           if (authHeader && authHeader.startsWith('Agentic ')) {
-            const mockMessage: Message = {
-              kind: 'message',
+            const mockMessage = createMockMessage({
               messageId: 'msg-cached',
-              role: 'user',
-              parts: [{
-                kind: 'text',
-                text: 'Agent card caching test'
-              } as TextPart]
-            };
+              text: 'Agent card caching test'
+            });
             
             const requestId = extractRequestId(options);
             return createResponse(requestId, {
@@ -1074,17 +957,10 @@ describe('AuthHandlingFetch Tests', () => {
         fetchImpl: authHandlingFetch
       });
 
-      const messageParams: MessageSendParams = {
-        message: {
-          kind: 'message',
-          messageId: 'test-msg-auth-fetch',
-          role: 'user',
-          parts: [{
-            kind: 'text',
-            text: 'Test with AuthHandlingFetch'
-          } as TextPart]
-        }
-      };
+      const messageParams = createMessageParams({
+        messageId: 'test-msg-auth-fetch',
+        text: 'Test with AuthHandlingFetch'
+      });
 
       const result = await clientWithAuthFetch.sendMessage(messageParams);
 

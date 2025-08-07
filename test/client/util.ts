@@ -155,3 +155,67 @@ export function createMockAgentCard(options: {
     skills: options.skills ?? []
   };
 }
+
+/**
+ * Factory function to create common message parameters for testing.
+ * Creates a MessageSendParams object with a text message that can be used
+ * across multiple test scenarios.
+ * 
+ * @param options - Configuration options for the message parameters
+ * @param options.messageId - Message ID (defaults to 'test-msg')
+ * @param options.text - Message text content (defaults to 'Hello, agent!')
+ * @param options.role - Message role (defaults to 'user')
+ * @returns A MessageSendParams object with the specified configuration
+ */
+export function createMessageParams(options: {
+  messageId?: string;
+  text?: string;
+  role?: 'user' | 'assistant';
+} = {}): any {
+  const messageId = options.messageId ?? 'test-msg';
+  const text = options.text ?? 'Hello, agent!';
+  const role = options.role ?? 'user';
+  
+  return {
+    message: {
+      kind: 'message',
+      messageId: messageId,
+      role: role,
+      parts: [{
+        kind: 'text',
+        text: text
+      }]
+    }
+  };
+}
+
+/**
+ * Factory function to create common mock message objects for testing.
+ * Creates a Message object with text content that can be used
+ * across multiple test scenarios.
+ * 
+ * @param options - Configuration options for the mock message
+ * @param options.messageId - Message ID (defaults to 'msg-123')
+ * @param options.text - Message text content (defaults to 'Hello, agent!')
+ * @param options.role - Message role (defaults to 'user')
+ * @returns A Message object with the specified configuration
+ */
+export function createMockMessage(options: {
+  messageId?: string;
+  text?: string;
+  role?: 'user' | 'assistant';
+} = {}): any {
+  const messageId = options.messageId ?? 'msg-123';
+  const text = options.text ?? 'Hello, agent!';
+  const role = options.role ?? 'user';
+  
+  return {
+    kind: 'message',
+    messageId: messageId,
+    role: role,
+    parts: [{
+      kind: 'text',
+      text: text
+    }]
+  };
+}
