@@ -3,6 +3,7 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { A2AClient } from '../../src/client/client.js';
 import { AgentCard, MessageSendParams, TextPart, Message, SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
+import { extractRequestId } from './util.js';
 
 
 // Factory function to create fresh Response objects that can be read multiple times
@@ -61,17 +62,8 @@ function createFreshMockFetch(url: string, options?: RequestInit) {
     if (!url.includes('/api'))
       return new Response('Not found', { status: 404 });
 
-    // Parse the request body to get the request ID
-    let requestId = 1;
-    if (options?.body) {
-      try {
-        const requestBody = JSON.parse(options.body as string);
-        requestId = requestBody.id || 1;
-      } catch (e) {
-        // If parsing fails, use default ID
-        requestId = 1;
-      }
-    }
+    // Extract request ID from the request body
+    const requestId = extractRequestId(options);
 
     // Basic RPC response with matching request ID
     const mockMessage: Message = {
@@ -259,16 +251,8 @@ describe('A2AClient Basic Tests', () => {
         }
         
         if (url.includes('/api')) {
-          // Parse request ID from the request body
-          let requestId = 1;
-          if (options?.body) {
-            try {
-              const requestBody = JSON.parse(options.body as string);
-              requestId = requestBody.id || 1;
-            } catch (e) {
-              requestId = 1;
-            }
-          }
+          // Extract request ID from the request body
+          const requestId = extractRequestId(options);
           
           return createFreshResponse(requestId, {
             jsonrpc: '2.0',

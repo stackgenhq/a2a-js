@@ -169,9 +169,10 @@ export class A2AClient {
       try {
         errorBodyText = await httpResponse.text();
         const errorJson = JSON.parse(errorBodyText);
-        // If the body is a valid JSON-RPC error response, let it be handled by the standard parsing below.
-        // However, if it's not even a JSON-RPC structure but still an error, throw based on HTTP status.
-        if (!errorJson.jsonrpc && errorJson.error) { // Check if it's a JSON-RPC error structure
+        // If the body is a valid JSON-RPC error response, return it as a proper JSON-RPC error response.
+        if (errorJson.jsonrpc && errorJson.error) {
+          return errorJson as TResponse;
+        } else if (!errorJson.jsonrpc && errorJson.error) { // Check if it's a JSON-RPC error structure
           throw new Error(`RPC error for ${method}: ${errorJson.error.message} (Code: ${errorJson.error.code}, HTTP Status: ${httpResponse.status}) Data: ${JSON.stringify(errorJson.error.data || {})}`);
         } else if (!errorJson.jsonrpc) {
           throw new Error(`HTTP error for ${method}! Status: ${httpResponse.status} ${httpResponse.statusText}. Response: ${errorBodyText}`);

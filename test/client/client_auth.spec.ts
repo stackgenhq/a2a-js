@@ -4,6 +4,7 @@ import sinon from 'sinon';
 import { A2AClient } from '../../src/client/client.js';
 import { AuthenticationHandler, HttpHeaders, AuthHandlingFetch } from '../../src/client/auth-handler.js';
 import { AgentCard, MessageSendParams, TextPart, Message, SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
+import { extractRequestId } from './util.js';
 
 
 // Factory function to create fresh Response objects that can be read multiple times
@@ -67,19 +68,7 @@ function createMockFetch() {
   });
 }
 
-// Helper function to extract request ID from request body
-function extractRequestId(options?: RequestInit): number {
-  if (options?.body) {
-    try {
-      const requestBody = JSON.parse(options.body as string);
-      return requestBody.id || 1;
-    } catch (e) {
-      // If parsing fails, use default ID
-      return 1;
-    }
-  }
-  return 1;
-}
+
 
 // Helper function to create fresh mock fetch responses
 function createFreshMockFetch(url: string, options?: RequestInit) {
