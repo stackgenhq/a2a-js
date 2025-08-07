@@ -139,8 +139,13 @@ describe('A2AClient Authentication Tests', () => {
   let client: A2AClient;
   let authHandler: MockAuthHandler;
   let mockFetch: sinon.SinonStub;
+  let originalConsoleError: typeof console.error;
 
   beforeEach(() => {    
+    // Suppress console.error during tests to avoid noise
+    originalConsoleError = console.error;
+    console.error = () => {};
+    
     // Create a fresh mock fetch for each test
     mockFetch = createMockFetch();
     
@@ -153,6 +158,8 @@ describe('A2AClient Authentication Tests', () => {
   });
 
   afterEach(() => {
+    // Restore console.error
+    console.error = originalConsoleError;
     sinon.restore();
   });
 
