@@ -1,0 +1,443 @@
+import { describe, it, beforeEach, afterEach } from 'mocha';
+import { expect } from 'chai';
+import sinon from 'sinon';
+import { A2AClient } from '../../src/client/client.js';
+import { AgentCard, MessageSendParams, TextPart, Message, SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
+
+
+// Factory function to create fresh Response objects that can be read multiple times
+function createFreshResponse(id: number, result: any, status: number = 200, headers: Record<string, string> = {}): Response {
+  const defaultHeaders = { 'Content-Type': 'application/json' };
+  const responseHeaders = { ...defaultHeaders, ...headers };
+  
+  // Create a fresh body each time to avoid "Body is unusable" errors
+  const body = JSON.stringify(result);
+  
+  // Create a ReadableStream to ensure the body can be read multiple times
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(body));
+      controller.close();
+    }
+  });
+  
+  return new Response(stream, {
+    status,
+    headers: responseHeaders
+  });
+}
+
+// Factory function to create fresh mock fetch functions
+function createMockFetch() {
+  return sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
+    // Create a fresh mock fetch for each call to avoid Response body reuse issues
+    return createFreshMockFetch(url, options);
+  });
+}
+
+// Helper function to create fresh mock fetch responses
+function createFreshMockFetch(url: string, options?: RequestInit) {
+    // Simulate agent card fetch
+    if (url.includes('.well-known/agent.json')) {
+      const mockAgentCard: AgentCard = {
+        name: 'Test Agent',
+        description: 'A test agent for basic client testing',
+        protocolVersion: '1.0.0',
+        version: '1.0.0',
+        url: 'https://test-agent.example.com/api',
+        defaultInputModes: ['text'],
+        defaultOutputModes: ['text'],
+        capabilities: {
+          streaming: true,
+          pushNotifications: true
+        },
+        skills: []
+      };
+      
+      return createFreshResponse(1, mockAgentCard);
+    }
+    
+    // Simulate RPC endpoint calls
+    if (!url.includes('/api'))
+      return new Response('Not found', { status: 404 });
+
+    // Parse the request body to get the request ID
+    let requestId = 1;
+    if (options?.body) {
+      try {
+        const requestBody = JSON.parse(options.body as string);
+        requestId = requestBody.id || 1;
+      } catch (e) {
+        // If parsing fails, use default ID
+        requestId = 1;
+      }
+    }
+
+    // Basic RPC response with matching request ID
+    const mockMessage: Message = {
+      kind: 'message',
+      messageId: 'msg-123',
+      role: 'user',
+      parts: [{
+        kind: 'text',
+        text: 'Hello, agent!'
+      } as TextPart]
+    };
+    
+    return createFreshResponse(requestId, {
+      jsonrpc: '2.0',
+      result: mockMessage,
+      id: requestId
+    });
+}
+
+// Helper function to check if response is a success response
+function isSuccessResponse(response: SendMessageResponse): response is SendMessageSuccessResponse {
+  return 'result' in response;
+}
+
+describe('A2AClient Basic Tests', () => {
+  let client: A2AClient;
+  let mockFetch: sinon.SinonStub;
+  let originalConsoleError: typeof console.error;
+
+  beforeEach(() => {    
+    // Suppress console.error during tests to avoid noise
+    originalConsoleError = console.error;
+    console.error = () => {};
+    
+    // Create a fresh mock fetch for each test
+    mockFetch = createMockFetch();
+    client = new A2AClient('https://test-agent.example.com', {
+      fetchImpl: mockFetch
+    });
+  });
+
+  afterEach(() => {
+    // Restore console.error
+    console.error = originalConsoleError;
+    sinon.restore();
+  });
+
+  describe('Client Initialization', () => {
+    it('should initialize client with default options', () => {
+      const basicClient = new A2AClient('https://test-agent.example.com');
+      expect(basicClient).to.be.instanceOf(A2AClient);
+    });
+
+    it('should initialize client with custom fetch implementation', () => {
+      const customFetch = sinon.stub();
+      const clientWithCustomFetch = new A2AClient('https://test-agent.example.com', {
+        fetchImpl: customFetch
+      });
+      expect(clientWithCustomFetch).to.be.instanceOf(A2AClient);
+    });
+
+    it('should fetch agent card during initialization', async () => {
+      // Wait for agent card to be fetched
+      await client.getAgentCard();
+      
+      expect(mockFetch.callCount).to.be.greaterThan(0);
+      const agentCardCall = mockFetch.getCalls().find(call => 
+        call.args[0].includes('.well-known/agent.json')
+      );
+      expect(agentCardCall).to.exist;
+    });
+  });
+
+  describe('Agent Card Handling', () => {
+    it('should fetch and parse agent card correctly', async () => {
+      const agentCard = await client.getAgentCard();
+      
+      expect(agentCard).to.have.property('name', 'Test Agent');
+      expect(agentCard).to.have.property('description', 'A test agent for basic client testing');
+      expect(agentCard).to.have.property('url', 'https://test-agent.example.com/api');
+      expect(agentCard).to.have.property('capabilities');
+      expect(agentCard.capabilities).to.have.property('streaming', true);
+      expect(agentCard.capabilities).to.have.property('pushNotifications', true);
+    });
+
+    it('should cache agent card for subsequent requests', async () => {
+      // First call
+      await client.getAgentCard();
+      
+      // Reset fetch mock
+      mockFetch.reset();
+      
+      // Second call - should not fetch agent card again
+      await client.getAgentCard();
+      
+      const agentCardCalls = mockFetch.getCalls().filter(call => 
+        call.args[0].includes('.well-known/agent.json')
+      );
+      
+      expect(agentCardCalls).to.have.length(0);
+    });
+
+    it('should handle agent card fetch errors', async () => {
+      const errorFetch = sinon.stub().callsFake(async (url: string) => {
+        if (url.includes('.well-known/agent.json')) {
+          return new Response('Not found', { status: 404 });
+        }
+        return new Response('Not found', { status: 404 });
+      });
+
+      // Create client after setting up the mock to avoid console.error during construction
+      const errorClient = new A2AClient('https://test-agent.example.com', {
+        fetchImpl: errorFetch
+      });
+
+      try {
+        await errorClient.getAgentCard();
+        expect.fail('Expected error to be thrown');
+      } catch (error) {
+        expect(error).to.be.instanceOf(Error);
+        expect((error as Error).message).to.include('Failed to fetch Agent Card');
+      }
+    });
+  });
+
+  describe('Message Sending', () => {
+    it('should send message successfully', async () => {
+      const messageParams: MessageSendParams = {
+        message: {
+          kind: 'message',
+          messageId: 'test-msg-1',
+          role: 'user',
+          parts: [{
+            kind: 'text',
+            text: 'Hello, agent!'
+          } as TextPart]
+        }
+      };
+
+      const result = await client.sendMessage(messageParams);
+
+      // Verify fetch was called
+      expect(mockFetch.callCount).to.be.greaterThan(0);
+      
+      // Verify RPC call was made
+      const rpcCall = mockFetch.getCalls().find(call => 
+        call.args[0].includes('/api')
+      );
+      expect(rpcCall).to.exist;
+      expect(rpcCall.args[1]).to.deep.include({
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+      expect(rpcCall.args[1].body).to.include('"method":"message/send"');
+
+      // Verify the result
+      expect(isSuccessResponse(result)).to.be.true;
+      if (isSuccessResponse(result)) {
+        expect(result.result).to.have.property('kind', 'message');
+        expect(result.result).to.have.property('messageId', 'msg-123');
+      }
+    });
+
+    it('should handle message sending errors', async () => {
+      const errorFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
+        if (url.includes('.well-known/agent.json')) {
+          const mockAgentCard: AgentCard = {
+            name: 'Test Agent',
+            description: 'A test agent for error testing',
+            protocolVersion: '1.0.0',
+            version: '1.0.0',
+            url: 'https://test-agent.example.com/api',
+            defaultInputModes: ['text'],
+            defaultOutputModes: ['text'],
+            capabilities: {
+              streaming: true,
+              pushNotifications: true
+            },
+            skills: []
+          };
+          return createFreshResponse(1, mockAgentCard);
+        }
+        
+        if (url.includes('/api')) {
+          // Parse request ID from the request body
+          let requestId = 1;
+          if (options?.body) {
+            try {
+              const requestBody = JSON.parse(options.body as string);
+              requestId = requestBody.id || 1;
+            } catch (e) {
+              requestId = 1;
+            }
+          }
+          
+          return createFreshResponse(requestId, {
+            jsonrpc: '2.0',
+            error: {
+              code: -32603,
+              message: 'Internal error'
+            },
+            id: requestId
+          }, 500);
+        }
+        
+        return new Response('Not found', { status: 404 });
+      });
+
+      const errorClient = new A2AClient('https://test-agent.example.com', {
+        fetchImpl: errorFetch
+      });
+
+      const messageParams: MessageSendParams = {
+        message: {
+          kind: 'message',
+          messageId: 'test-msg-error',
+          role: 'user',
+          parts: [{
+            kind: 'text',
+            text: 'This should fail'
+          } as TextPart]
+        }
+      };
+
+      try {
+        await errorClient.sendMessage(messageParams);
+        expect.fail('Expected error to be thrown');
+      } catch (error) {
+        expect(error).to.be.instanceOf(Error);
+      }
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should handle network errors gracefully', async () => {
+      const networkErrorFetch = sinon.stub().rejects(new Error('Network error'));
+      
+      const networkErrorClient = new A2AClient('https://test-agent.example.com', {
+        fetchImpl: networkErrorFetch
+      });
+
+      try {
+        await networkErrorClient.getAgentCard();
+        expect.fail('Expected error to be thrown');
+      } catch (error) {
+        expect(error).to.be.instanceOf(Error);
+        expect((error as Error).message).to.include('Network error');
+      }
+    });
+
+    it('should handle malformed JSON responses', async () => {
+      const malformedFetch = sinon.stub().callsFake(async (url: string) => {
+        if (url.includes('.well-known/agent.json')) {
+          return new Response('Invalid JSON', {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      });
+
+      const malformedClient = new A2AClient('https://test-agent.example.com', {
+        fetchImpl: malformedFetch
+      });
+
+      try {
+        await malformedClient.getAgentCard();
+        expect.fail('Expected error to be thrown');
+      } catch (error) {
+        expect(error).to.be.instanceOf(Error);
+      }
+    });
+
+    it('should handle missing agent card URL', async () => {
+      const missingUrlFetch = sinon.stub().callsFake(async (url: string) => {
+        if (url.includes('.well-known/agent.json')) {
+          const invalidAgentCard = {
+            name: 'Test Agent',
+            description: 'A test agent without URL',
+            protocolVersion: '1.0.0',
+            version: '1.0.0',
+            // Missing url field
+            defaultInputModes: ['text'],
+            defaultOutputModes: ['text'],
+            capabilities: {
+              streaming: true,
+              pushNotifications: true
+            },
+            skills: []
+          };
+          return createFreshResponse(1, invalidAgentCard);
+        }
+        return new Response('Not found', { status: 404 });
+      });
+
+      const missingUrlClient = new A2AClient('https://test-agent.example.com', {
+        fetchImpl: missingUrlFetch
+      });
+
+      try {
+        await missingUrlClient.getAgentCard();
+        expect.fail('Expected error to be thrown');
+      } catch (error) {
+        expect(error).to.be.instanceOf(Error);
+        expect((error as Error).message).to.include("does not contain a valid 'url'");
+      }
+    });
+  });
+
+  describe('Request ID Management', () => {
+    it('should increment request IDs for multiple calls', async () => {
+      const messageParams: MessageSendParams = {
+        message: {
+          kind: 'message',
+          messageId: 'test-msg-1',
+          role: 'user',
+          parts: [{
+            kind: 'text',
+            text: 'First message'
+          } as TextPart]
+        }
+      };
+
+      // Track request IDs
+      let capturedRequestIds: number[] = [];
+      const idTrackingFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
+        if (url.includes('/api')) {
+          const body = JSON.parse(options?.body as string);
+          capturedRequestIds.push(body.id);
+          
+          // Return response with matching ID
+          const mockMessage: Message = {
+            kind: 'message',
+            messageId: `msg-${body.id}`,
+            role: 'user',
+            parts: [{
+              kind: 'text',
+              text: 'Test message'
+            } as TextPart]
+          };
+          
+          return createFreshResponse(body.id, {
+            jsonrpc: '2.0',
+            result: mockMessage,
+            id: body.id
+          });
+        }
+        return createFreshMockFetch(url, options);
+      });
+
+      const idTrackingClient = new A2AClient('https://test-agent.example.com', {
+        fetchImpl: idTrackingFetch
+      });
+
+      // Send multiple messages
+      await idTrackingClient.sendMessage(messageParams);
+      await idTrackingClient.sendMessage(messageParams);
+      await idTrackingClient.sendMessage(messageParams);
+
+      // Verify request IDs are unique and incrementing
+      expect(capturedRequestIds).to.have.length(3);
+      expect(capturedRequestIds[0]).to.be.lessThan(capturedRequestIds[1]);
+      expect(capturedRequestIds[1]).to.be.lessThan(capturedRequestIds[2]);
+    });
+  });
+});

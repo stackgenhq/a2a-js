@@ -31,15 +31,15 @@ import {
   A2AError,
   SendMessageSuccessResponse
 } from '../types.js'; // Assuming schema.ts is in the same directory or appropriately pathed
-import { AuthenticationHandler, HttpHeaders } from './auth-handler.js';
+import { AuthenticationHandler } from './auth-handler.js';
 
 // Helper type for the data yielded by streaming methods
 type A2AStreamEventData = Message | Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent;
 
 export interface A2AClientOptions {
-  authHandler?: AuthenticationHandler;
   agentCardPath?: string;
   fetchImpl?: typeof fetch;
+  authHandler?: AuthenticationHandler;
 }
 
 /**
@@ -50,8 +50,8 @@ export class A2AClient {
   private static readonly DEFAULT_AGENT_CARD_PATH = ".well-known/agent.json";
   private requestIdCounter: number = 1;
   private serviceEndpointUrl?: string; // To be populated from AgentCard after fetching
-  private authHandler?: AuthenticationHandler;
   private fetchImpl: typeof fetch;
+  private authHandler?: AuthenticationHandler;
 
   /**
    * Constructs an A2AClient instance.
@@ -63,8 +63,8 @@ export class A2AClient {
    */
   constructor(agentBaseUrl: string, options?: A2AClientOptions) {
     this.fetchImpl = options?.fetchImpl ?? fetch;
-    this.agentCardPromise = this._fetchAndCacheAgentCard( agentBaseUrl, options?.agentCardPath );
     this.authHandler = options?.authHandler;
+    this.agentCardPromise = this._fetchAndCacheAgentCard( agentBaseUrl, options?.agentCardPath );
   }
 
   /**
@@ -170,9 +170,13 @@ export class A2AClient {
     const httpResponse = await this._fetchRpc( endpoint, rpcRequest );
 
     if (!httpResponse.ok) {
+      // Clone the response before reading it to avoid "Body has already been read" errors
+      // when the auth handler needs to retry the request
+      const responseClone = httpResponse.clone();
+      
       let errorBodyText = '(empty or non-JSON response)';
       try {
-        errorBodyText = await httpResponse.text();
+        errorBodyText = await responseClone.text();
         const errorJson = JSON.parse(errorBodyText);
         // If the body is a valid JSON-RPC error response, let it be handled by the standard parsing below.
         // However, if it's not even a JSON-RPC structure but still an error, throw based on HTTP status.
@@ -202,37 +206,23 @@ export class A2AClient {
   }
 
   /**
-   * fetch() with authentication handling.  Uses a generic authentication handler that can inspect
-   * HTTP response codes and headers and suggest new headers to use during an automatic retry.
+   * Internal helper method to fetch the RPC service endpoint.
    * @param url The URL to fetch.
    * @param rpcRequest The JSON-RPC request to send.
    * @param acceptHeader The Accept header to use.  Defaults to "application/json".
    * @returns A Promise that resolves to the fetch HTTP response.
    */
   private async _fetchRpc( url: string, rpcRequest: JSONRPCRequest, acceptHeader: string = "application/json" ): Promise<Response> {
-    const options = (headers: HttpHeaders = {}) => ({
+    const requestInit: RequestInit = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Accept": acceptHeader, // Expect JSON response for non-streaming requests
-        ...headers // if we have an Authorization header, add it
       },
       body: JSON.stringify(rpcRequest)
-    } as RequestInit);
-    const requestInit = options( this.authHandler?.headers() );
+    };
 
-    let fetchResponse = await this.fetchImpl(url, requestInit);
-
-    // check for HTTP 401/403 and retry request if necessary
-    const updatedHeaders = await this.authHandler?.shouldRetryWithHeaders(requestInit, fetchResponse);
-    if (updatedHeaders) {
-      // retry request with revised headers
-      fetchResponse = await this.fetchImpl(url, options(updatedHeaders));
-      if (fetchResponse.ok && this.authHandler?.onSuccess)
-        await this.authHandler.onSuccess(updatedHeaders); // Remember headers that worked
-    }
-
-    return fetchResponse;
+    return this.fetchImpl(url, requestInit);
   }
 
   /**

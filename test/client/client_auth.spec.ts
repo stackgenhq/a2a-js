@@ -2,54 +2,188 @@ import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import sinon from 'sinon';
 import { A2AClient } from '../../src/client/client.js';
-import { AuthenticationHandler, HttpHeaders } from '../../src/client/auth-handler.js';
+import { AuthenticationHandler, HttpHeaders, AuthHandlingFetch } from '../../src/client/auth-handler.js';
 import { AgentCard, MessageSendParams, TextPart, Message, SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
+
+
+// Factory function to create fresh Response objects that can be read multiple times
+function createFreshResponse(id: number, result: any, status: number = 200, headers: Record<string, string> = {}): Response {
+  const defaultHeaders = { 'Content-Type': 'application/json' };
+  const responseHeaders = { ...defaultHeaders, ...headers };
+  
+  // Create a fresh body each time to avoid "Body is unusable" errors
+  const body = JSON.stringify(result);
+  
+  // Create a ReadableStream to ensure the body can be read multiple times
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(body));
+      controller.close();
+    }
+  });
+  
+  return new Response(stream, {
+    status,
+    headers: responseHeaders
+  });
+}
+
+// Challenge manager class for authentication testing
+class ChallengeManager {
+  private challengeStore: Set<string> = new Set();
+
+  createChallenge(): string {
+    const challenge = Math.random().toString(36).substring(2, 18);  // just a random string
+    this.challengeStore.add(challenge);
+    return challenge;
+  }
+
+  // used by clients to sign challenges
+  static signChallenge(challenge: string): string {
+    return challenge + '.' + challenge.split('.').reverse().join('');
+  }
+
+  // verify the "signature" as simply the reverse of the challenge
+  verifyToken(token: string): boolean {
+    const [challenge, signature] = token.split('.');
+    if (!this.challengeStore.has(challenge))
+      return false;
+
+    return signature === challenge.split('.').reverse().join('');
+  }
+
+  clearStore(): void {
+    this.challengeStore.clear();
+  }
+}
+
+const challengeManager = new ChallengeManager();
+
+// Factory function to create fresh mock fetch functions
+function createMockFetch() {
+  return sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
+    // Create a fresh mock fetch for each call to avoid Response body reuse issues
+    return createFreshMockFetch(url, options);
+  });
+}
+
+// Helper function to create fresh mock fetch responses
+function createFreshMockFetch(url: string, options?: RequestInit) {
+  // Simulate agent card fetch
+  if (url.includes('.well-known/agent.json')) {
+    const mockAgentCard: AgentCard = {
+      name: 'Test Agent',
+      description: 'A test agent for authentication testing',
+      protocolVersion: '1.0.0',
+      version: '1.0.0',
+      url: 'https://test-agent.example.com/api',
+      defaultInputModes: ['text'],
+      defaultOutputModes: ['text'],
+      capabilities: {
+        streaming: true,
+        pushNotifications: true
+      },
+      skills: []
+    };
+    
+    return createFreshResponse(1, mockAgentCard);
+  }
+  
+  // Simulate RPC endpoint calls
+  if (!url.includes('/api'))
+    return new Response('Not found', { status: 404 });
+
+  const authHeader = options?.headers?.['Authorization'] as string;
+  
+  // If there is no auth header, return a 401 with a challenge that needs to be signed (e.g. using a private key)
+  if (!authHeader) {
+    const challenge = challengeManager.createChallenge();
+
+    return createFreshResponse(1, {
+      jsonrpc: '2.0',
+      error: {
+        code: -32001,
+        message: 'Authentication required'
+      },
+      id: 1
+    }, 401, { 'WWW-Authenticate': `Agentic ${challenge}` });
+  }
+
+  // We have an auth header, so make sure the scheme is correct
+  const [ scheme, params ] = authHeader.split(/\s+/);
+  if (scheme !== 'Agentic') {
+    return createFreshResponse(1, {
+      jsonrpc: '2.0',
+      error: {
+        code: -32001,
+        message: 'Invalid authorization scheme'
+      }
+    }, 401);
+  }
+
+  // If an auth header is provided, make sure it's the signed challenge
+  if (!challengeManager.verifyToken(params)) {
+    return createFreshResponse(1, {
+      jsonrpc: '2.0',
+      error: {
+        code: -32001,
+        message: 'Invalid authorization token'
+      }
+    }, 401);
+  }
+
+  // All good, return a success response
+  const mockMessage: Message = {
+    kind: 'message',
+    messageId: 'msg-123',
+    role: 'user',
+    parts: [{
+      kind: 'text',
+      text: 'Hello, agent!'
+    } as TextPart]
+  };
+  
+  return createFreshResponse(1, {
+    jsonrpc: '2.0',
+    result: mockMessage,
+    id: 1
+  });
+}
+
 
 // Mock fetch implementation
 let mockFetch: sinon.SinonStub;
-let fetchCallCount = 0;
 
-// Mock authentication handler that simulates token generation
+// Mock authentication handler that simulates generating tokens and confirming signatures
 class MockAuthHandler implements AuthenticationHandler {
-  private hasToken = false;
-  private tokenGenerated = false;
-  private agenticToken: string | null = null;
+  private authorization: string | null = null;
 
   headers(): HttpHeaders {
-    if (this.hasToken && this.agenticToken) {
-      return { 'Authorization': `Agentic ${this.agenticToken}` };
-    }
-    return {};
+    return this.authorization ? { 'Authorization': this.authorization } : {}
   }
 
   async shouldRetryWithHeaders(req: RequestInit, res: Response): Promise<HttpHeaders | undefined> {
     // Simulate 401/403 response handling
-    if (res.status === 401 || res.status === 403) {
-      if (!this.tokenGenerated) {
-        // Parse WWW-Authenticate header to extract the token68 value
-        const wwwAuthHeader = res.headers.get('WWW-Authenticate');
-        if (wwwAuthHeader && wwwAuthHeader.startsWith('Agentic ')) {
-          // Extract the token68 value (everything after "Agentic ")
-          this.agenticToken = wwwAuthHeader.substring(8); // Remove "Agentic " prefix
-          this.tokenGenerated = true;
-          this.hasToken = true;
-          return { 'Authorization': `Agentic ${this.agenticToken}` };
-        }
-      }
-    }
-    return undefined;
+    if (res.status !== 401 && res.status !== 403)
+      return undefined;
+
+    // Parse WWW-Authenticate header to extract the token68/challenge value
+    const [scheme, challenge] = res.headers.get('WWW-Authenticate')?.split(/\s+/) || [];
+    if (scheme !== 'Agentic')
+      return undefined;  // Not handled, only Agentic is supported
+
+    // Use the ChallengeManager to sign the challenge
+    const token = ChallengeManager.signChallenge(challenge);
+      
+    // have the client try the token, BUT don't save it in case the client doesn't accept it
+    return { 'Authorization': `Agentic ${token}` };
   }
 
   async onSuccess(headers: HttpHeaders): Promise<void> {
-    // Remember successful headers
-    if (headers['Authorization']) {
-      this.hasToken = true;
-      // Extract token from successful Authorization header
-      const authHeader = headers['Authorization'];
-      if (authHeader.startsWith('Agentic ')) {
-        this.agenticToken = authHeader.substring(8); // Remove "Agentic " prefix
-      }
-    }
+    // Remember successful authorization header
+    const auth = headers['Authorization'];
+    if (auth)
+      this.authorization = auth;
   }
 }
 
@@ -62,127 +196,15 @@ describe('A2AClient Authentication Tests', () => {
   let client: A2AClient;
   let authHandler: MockAuthHandler;
 
-  beforeEach(() => {
-    // Reset mock state
-    fetchCallCount = 0;
-    
-    // Create mock fetch that simulates authentication flow
-    mockFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
-      fetchCallCount++;
-      
-      // Simulate agent card fetch
-      if (url.includes('.well-known/agent.json')) {
-        const mockAgentCard: AgentCard = {
-          name: 'Test Agent',
-          description: 'A test agent for authentication testing',
-          version: '1.0.0',
-          url: 'https://test-agent.example.com/api',
-          defaultInputModes: ['text'],
-          defaultOutputModes: ['text'],
-          capabilities: {
-            streaming: true,
-            pushNotifications: true
-          },
-          skills: []
-        };
-        
-        return new Response(JSON.stringify(mockAgentCard), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-      
-      // Simulate RPC endpoint calls
-      if (url.includes('/api')) {
-        const authHeader = options?.headers?.['Authorization'] as string;
-        
-        // First call: no auth header, return 401
-        if (fetchCallCount === 2 && !authHeader) {
-          return new Response(JSON.stringify({
-            jsonrpc: '2.0',
-            error: {
-              code: -32001,
-              message: 'Authentication required'
-            },
-            id: 1
-          }), {
-            status: 401,
-            headers: { 
-              'Content-Type': 'application/json',
-              'WWW-Authenticate': 'Agentic eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
-            }
-          });
-        }
-        
-        // Second call: with auth header, return success
-        if (fetchCallCount === 3 && authHeader && authHeader.startsWith('Agentic ')) {
-          const mockMessage: Message = {
-            kind: 'message',
-            messageId: 'msg-123',
-            role: 'user',
-            parts: [{
-              kind: 'text',
-              text: 'Hello, agent!'
-            } as TextPart]
-          };
-          
-          return new Response(JSON.stringify({
-            jsonrpc: '2.0',
-            result: mockMessage,
-            id: 1
-          }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-        
-        // Subsequent calls with auth header should succeed
-        if (authHeader && authHeader.startsWith('Agentic ')) {
-          const mockMessage: Message = {
-            kind: 'message',
-            messageId: `msg-${fetchCallCount}`,
-            role: 'user',
-            parts: [{
-              kind: 'text',
-              text: `Message ${fetchCallCount}`
-            } as TextPart]
-          };
-          
-          return new Response(JSON.stringify({
-            jsonrpc: '2.0',
-            result: mockMessage,
-            id: fetchCallCount
-          }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-        
-        // Any other case without auth header should fail
-        return new Response(JSON.stringify({
-          jsonrpc: '2.0',
-          error: {
-            code: -32001,
-            message: 'Authentication required'
-          },
-          id: fetchCallCount
-        }), {
-          status: 401,
-          headers: { 
-            'Content-Type': 'application/json',
-            'WWW-Authenticate': 'Agentic eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
-          }
-        });
-      }
-      
-      // Default response
-      return new Response('Not found', { status: 404 });
-    });
+  beforeEach(() => {    
+    // Create a fresh mock fetch for each test
+    mockFetch = createMockFetch();
     
     authHandler = new MockAuthHandler();
+    // Use AuthHandlingFetch to wrap the mock fetch with authentication handling
+    const authHandlingFetch = new AuthHandlingFetch(mockFetch, authHandler);
     client = new A2AClient('https://test-agent.example.com', {
-      authHandler,
-      fetchImpl: mockFetch
+      fetchImpl: authHandlingFetch as unknown as typeof fetch
     });
   });
 
@@ -230,13 +252,13 @@ describe('A2AClient Authentication Tests', () => {
       // Third call: RPC request with auth header
       expect(mockFetch.thirdCall.args[0]).to.equal('https://test-agent.example.com/api');
       expect(mockFetch.thirdCall.args[1]).to.deep.include({
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': 'Agentic eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
-        }
+        method: 'POST'
       });
+      // Check headers separately to avoid issues with Authorization header
+      expect(mockFetch.thirdCall.args[1].headers).to.have.property('Content-Type', 'application/json');
+      expect(mockFetch.thirdCall.args[1].headers).to.have.property('Accept', 'application/json');
+      expect(mockFetch.thirdCall.args[1].headers).to.have.property('Authorization');
+      expect(mockFetch.thirdCall.args[1].headers['Authorization']).to.match(/^Agentic .+$/);
       expect(mockFetch.thirdCall.args[1].body).to.include('"method":"message/send"');
 
       // Verify the result
@@ -262,15 +284,14 @@ describe('A2AClient Authentication Tests', () => {
       // First request - should trigger auth flow
       await client.sendMessage(messageParams);
       
-      // Reset call count for second request
-      fetchCallCount = 0;
+      // Reset calls
       mockFetch.reset();
       
       // Create a new mock for the second request that expects auth header
       mockFetch.callsFake(async (url: string, options?: RequestInit) => {
         if (url.includes('/api')) {
           const authHeader = options?.headers?.['Authorization'] as string;
-          if (authHeader === 'Agentic eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c') {
+          if (authHeader && authHeader.startsWith('Agentic ')) {
             const mockMessage: Message = {
               kind: 'message',
               messageId: 'msg-second',
@@ -281,13 +302,10 @@ describe('A2AClient Authentication Tests', () => {
               } as TextPart]
             };
             
-            return new Response(JSON.stringify({
+            return createFreshResponse(1, {
               jsonrpc: '2.0',
               result: mockMessage,
               id: 1
-            }), {
-              status: 200,
-              headers: { 'Content-Type': 'application/json' }
             });
           }
         }
@@ -302,9 +320,8 @@ describe('A2AClient Authentication Tests', () => {
       
       // Should include auth header immediately
       expect(mockFetch.firstCall.args[0]).to.equal('https://test-agent.example.com/api');
-      expect(mockFetch.firstCall.args[1].headers).to.include({
-        'Authorization': 'Agentic eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
-      });
+      expect(mockFetch.firstCall.args[1].headers).to.have.property('Authorization');
+      expect(mockFetch.firstCall.args[1].headers['Authorization']).to.match(/^Agentic .+$/);
 
       expect(isSuccessResponse(result2)).to.be.true;
     });
@@ -329,6 +346,7 @@ describe('A2AClient Authentication Tests', () => {
           const mockAgentCard: AgentCard = {
             name: 'Test Agent',
             description: 'A test agent for authentication testing',
+            protocolVersion: '1.0.0',
             version: '1.0.0',
             url: 'https://test-agent.example.com/api',
             defaultInputModes: ['text'],
@@ -340,10 +358,7 @@ describe('A2AClient Authentication Tests', () => {
             skills: []
           };
           
-          return new Response(JSON.stringify(mockAgentCard), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
-          });
+          return createFreshResponse(1, mockAgentCard);
         }
         
         if (url.includes('/api')) {
@@ -351,24 +366,18 @@ describe('A2AClient Authentication Tests', () => {
           
           // If no auth header, return 401 to trigger auth flow
           if (!authHeader) {
-            return new Response(JSON.stringify({
+            return createFreshResponse(1, {
               jsonrpc: '2.0',
               error: {
                 code: -32001,
                 message: 'Authentication required'
               },
               id: 1
-            }), {
-              status: 401,
-              headers: { 
-                'Content-Type': 'application/json',
-                'WWW-Authenticate': 'Agentic eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
-              }
-            });
+            }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
           }
           
           // If auth header is present, return success
-          if (authHeader === 'Agentic eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c') {
+          if (authHeader.startsWith('Agentic ')) {
             const mockMessage: Message = {
               kind: 'message',
               messageId: `msg-concurrent-${Date.now()}`,
@@ -379,13 +388,10 @@ describe('A2AClient Authentication Tests', () => {
               } as TextPart]
             };
             
-            return new Response(JSON.stringify({
+            return createFreshResponse(1, {
               jsonrpc: '2.0',
               result: mockMessage,
               id: 1
-            }), {
-              status: 200,
-              headers: { 'Content-Type': 'application/json' }
             });
           }
         }
@@ -437,9 +443,7 @@ describe('A2AClient Authentication Tests', () => {
       // Verify auth handler methods were called
       expect(authHandlerSpy.headers.called).to.be.true;
       expect(authHandlerSpy.shouldRetryWithHeaders.called).to.be.true;
-      expect(authHandlerSpy.onSuccess.calledWith({
-        'Authorization': 'Agentic eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
-      })).to.be.true;
+      expect(authHandlerSpy.onSuccess.called).to.be.true;
     });
 
     it('should handle auth handler returning undefined for retry', async () => {
@@ -449,7 +453,6 @@ describe('A2AClient Authentication Tests', () => {
       noRetryHandler.shouldRetryWithHeaders = sinon.stub().resolves(undefined);
 
       const clientNoRetry = new A2AClient('https://test-agent.example.com', {
-        authHandler: noRetryHandler,
         fetchImpl: mockFetch
       });
 
@@ -482,6 +485,7 @@ describe('A2AClient Authentication Tests', () => {
           const mockAgentCard: AgentCard = {
             name: 'Test Agent',
             description: 'A test agent for authentication testing',
+            protocolVersion: '1.0.0',
             version: '1.0.0',
             url: 'https://test-agent.example.com/api',
             defaultInputModes: ['text'],
@@ -493,30 +497,21 @@ describe('A2AClient Authentication Tests', () => {
             skills: []
           };
           
-          return new Response(JSON.stringify(mockAgentCard), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
-          });
+          return createFreshResponse(1, mockAgentCard);
         }
         
         if (url.includes('/api')) {
           const authHeader = options?.headers?.['Authorization'] as string;
           
           // Return 401 with WWW-Authenticate header
-          const response = new Response(JSON.stringify({
+          const response = createFreshResponse(1, {
             jsonrpc: '2.0',
             error: {
               code: -32001,
               message: 'Authentication required'
             },
             id: 1
-          }), {
-            status: 401,
-            headers: { 
-              'Content-Type': 'application/json',
-              'WWW-Authenticate': 'Agentic eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
-            }
-          });
+          }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
           
           capturedResponse = response;
           return response;
@@ -548,9 +543,7 @@ describe('A2AClient Authentication Tests', () => {
       } catch (error) {
         // Verify that the WWW-Authenticate header was returned
         expect(capturedResponse).to.not.be.null;
-        expect(capturedResponse!.headers.get('WWW-Authenticate')).to.equal(
-          'Agentic eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
-        );
+        expect(capturedResponse!.headers.get('WWW-Authenticate')).to.equal('Agentic challenge123');
       }
     });
 
@@ -559,24 +552,22 @@ describe('A2AClient Authentication Tests', () => {
       let capturedAuthHeaders: string[] = [];
       const authHeaderTestFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
         if (url.includes('.well-known/agent.json')) {
-          const mockAgentCard: AgentCard = {
-            name: 'Test Agent',
-            description: 'A test agent for authentication testing',
-            version: '1.0.0',
-            url: 'https://test-agent.example.com/api',
-            defaultInputModes: ['text'],
-            defaultOutputModes: ['text'],
-            capabilities: {
-              streaming: true,
-              pushNotifications: true
-            },
-            skills: []
-          };
+              const mockAgentCard: AgentCard = {
+      name: 'Test Agent',
+      description: 'A test agent for authentication testing',
+      protocolVersion: '1.0.0',
+      version: '1.0.0',
+      url: 'https://test-agent.example.com/api',
+      defaultInputModes: ['text'],
+      defaultOutputModes: ['text'],
+      capabilities: {
+        streaming: true,
+        pushNotifications: true
+      },
+      skills: []
+    };
           
-          return new Response(JSON.stringify(mockAgentCard), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
-          });
+          return createFreshResponse(1, mockAgentCard);
         }
         
         if (url.includes('/api')) {
@@ -585,20 +576,14 @@ describe('A2AClient Authentication Tests', () => {
           
           // First call: no auth header, return 401 with WWW-Authenticate
           if (!authHeader) {
-            return new Response(JSON.stringify({
+            return createFreshResponse(1, {
               jsonrpc: '2.0',
               error: {
                 code: -32001,
                 message: 'Authentication required'
               },
               id: 1
-            }), {
-              status: 401,
-              headers: { 
-                'Content-Type': 'application/json',
-                'WWW-Authenticate': 'Agentic eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
-              }
-            });
+            }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
           }
           
           // Second call: with Agentic auth header, return success
@@ -613,13 +598,10 @@ describe('A2AClient Authentication Tests', () => {
               } as TextPart]
             };
             
-            return new Response(JSON.stringify({
+            return createFreshResponse(1, {
               jsonrpc: '2.0',
               result: mockMessage,
               id: 1
-            }), {
-              status: 200,
-              headers: { 'Content-Type': 'application/json' }
             });
           }
         }
@@ -627,9 +609,9 @@ describe('A2AClient Authentication Tests', () => {
         return new Response('Not found', { status: 404 });
       });
 
+      const authHandlingFetch = new AuthHandlingFetch(authHeaderTestFetch, authHandler);
       const clientAuthTest = new A2AClient('https://test-agent.example.com', {
-        authHandler,
-        fetchImpl: authHeaderTestFetch
+        fetchImpl: authHandlingFetch as unknown as typeof fetch
       });
 
       const messageParams: MessageSendParams = {
@@ -648,9 +630,10 @@ describe('A2AClient Authentication Tests', () => {
       const result = await clientAuthTest.sendMessage(messageParams);
 
       // Verify the Authorization headers were sent correctly
+      // With AuthHandlingFetch, the auth handler makes the retry internally, so we see both calls
       expect(capturedAuthHeaders).to.have.length(2);
       expect(capturedAuthHeaders[0]).to.equal(''); // First call: no auth header
-      expect(capturedAuthHeaders[1]).to.equal('Agentic eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'); // Second call: with Agentic auth header
+      expect(capturedAuthHeaders[1]).to.match(/^Agentic .+$/); // Second call: with Agentic auth header
 
       // Verify the result
       expect(isSuccessResponse(result)).to.be.true;
@@ -664,6 +647,7 @@ describe('A2AClient Authentication Tests', () => {
           const mockAgentCard: AgentCard = {
             name: 'Test Agent',
             description: 'A test agent that does not require authentication',
+            protocolVersion: '1.0.0',
             version: '1.0.0',
             url: 'https://test-agent.example.com/api',
             defaultInputModes: ['text'],
@@ -675,10 +659,7 @@ describe('A2AClient Authentication Tests', () => {
             skills: []
           };
           
-          return new Response(JSON.stringify(mockAgentCard), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
-          });
+          return createFreshResponse(1, mockAgentCard);
         }
         
         if (url.includes('/api')) {
@@ -696,13 +677,10 @@ describe('A2AClient Authentication Tests', () => {
             } as TextPart]
           };
           
-          return new Response(JSON.stringify({
+          return createFreshResponse(1, {
             jsonrpc: '2.0',
             result: mockMessage,
             id: 1
-          }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
           });
         }
         
@@ -750,6 +728,7 @@ describe('A2AClient Authentication Tests', () => {
           const mockAgentCard: AgentCard = {
             name: 'Test Agent',
             description: 'A test agent that requires authentication',
+            protocolVersion: '1.0.0',
             version: '1.0.0',
             url: 'https://test-agent.example.com/api',
             defaultInputModes: ['text'],
@@ -761,10 +740,7 @@ describe('A2AClient Authentication Tests', () => {
             skills: []
           };
           
-          return new Response(JSON.stringify(mockAgentCard), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
-          });
+          return createFreshResponse(1, mockAgentCard);
         }
         
         if (url.includes('/api')) {
@@ -791,7 +767,7 @@ describe('A2AClient Authentication Tests', () => {
             status: 401,
             headers: { 
               'Content-Type': 'application/json',
-              'WWW-Authenticate': 'Agentic eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
+              'WWW-Authenticate': 'Agentic challenge123'
             }
           });
         }
@@ -816,17 +792,14 @@ describe('A2AClient Authentication Tests', () => {
         }
       };
 
-      // This should fail with a 401 error since no authHandler is provided
-      try {
-        await clientNoAuthHandler.sendMessage(messageParams);
-        expect.fail('Expected error to be thrown');
-      } catch (error) {
-        // Verify that the error is properly thrown
-        expect(error).to.be.instanceOf(Error);
-        // The error is "Body is unusable: Body has already been read" due to Response body reuse
-        // This is expected behavior when no authHandler is provided and server returns 401
-        expect((error as Error).message).to.include('Body is unusable');
-      }
+      // The client should return a JSON-RPC error response rather than throwing an error
+      const result = await clientNoAuthHandler.sendMessage(messageParams);
+      
+      // Verify that the result is a JSON-RPC error response
+      expect(result).to.have.property('jsonrpc', '2.0');
+      expect(result).to.have.property('error');
+      expect((result as any).error).to.have.property('code', -32001);
+      expect((result as any).error).to.have.property('message', 'Authentication required');
 
       // Verify that fetch was called only once (no retry attempted)
       expect(noAuthHandlerFetch.callCount).to.equal(2); // One for agent card, one for API call
@@ -924,7 +897,7 @@ describe('A2AClient Authentication Tests', () => {
       mockFetch.callsFake(async (url: string, options?: RequestInit) => {
         if (url.includes('/api')) {
           const authHeader = options?.headers?.['Authorization'] as string;
-          if (authHeader === 'Agentic eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c') {
+          if (authHeader && authHeader.startsWith('Agentic ')) {
             const mockMessage: Message = {
               kind: 'message',
               messageId: 'msg-cached',
@@ -935,13 +908,10 @@ describe('A2AClient Authentication Tests', () => {
               } as TextPart]
             };
             
-            return new Response(JSON.stringify({
+            return createFreshResponse(1, {
               jsonrpc: '2.0',
               result: mockMessage,
               id: 1
-            }), {
-              status: 200,
-              headers: { 'Content-Type': 'application/json' }
             });
           }
         }
@@ -958,6 +928,313 @@ describe('A2AClient Authentication Tests', () => {
       );
       
       expect(agentCardCalls).to.have.length(0);
+    });
+  });
+});
+
+describe('AuthHandlingFetch Tests', () => {
+  let mockFetch: sinon.SinonStub;
+  let authHandler: MockAuthHandler;
+  let authHandlingFetch: AuthHandlingFetch;
+
+  beforeEach(() => {
+    mockFetch = createMockFetch();
+    authHandler = new MockAuthHandler();
+    authHandlingFetch = new AuthHandlingFetch(mockFetch, authHandler);
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  describe('Constructor and Function Call', () => {
+    it('should create a callable instance', () => {
+      expect(typeof authHandlingFetch).to.equal('function');
+      expect(authHandlingFetch).to.be.instanceOf(AuthHandlingFetch);
+    });
+
+    it('should support direct function calls', async () => {
+      const response = await authHandlingFetch('https://test.example.com/api');
+      expect(response).to.be.instanceOf(Response);
+    });
+
+    it('should support fetch method calls', async () => {
+      const response = await authHandlingFetch.fetch('https://test.example.com/api');
+      expect(response).to.be.instanceOf(Response);
+    });
+  });
+
+  describe('Header Merging', () => {
+    it('should merge auth headers with provided headers', async () => {
+      const authHandlerSpy = sinon.spy(authHandler, 'headers');
+      
+      await authHandlingFetch('https://test.example.com/api', {
+        headers: {
+          'Content-Type': 'application/json',
+          'Custom-Header': 'custom-value'
+        }
+      });
+
+      expect(authHandlerSpy.called).to.be.true;
+      
+      // Verify that the fetch was called with merged headers
+      const fetchCall = mockFetch.getCall(0);
+      const headers = fetchCall.args[1]?.headers as Record<string, string>;
+      
+      expect(headers).to.include({
+        'Content-Type': 'application/json',
+        'Custom-Header': 'custom-value'
+      });
+      
+      // Should also include auth headers if any
+      // Note: The auth handler doesn't have any headers initially, so we don't expect Authorization
+      // The auth handler only provides headers after a 401/403 response
+    });
+
+    it('should handle empty headers gracefully', async () => {
+      const emptyAuthHandler = new MockAuthHandler();
+      const emptyAuthFetch = new AuthHandlingFetch(mockFetch, emptyAuthHandler);
+      
+      await emptyAuthFetch('https://test.example.com/api');
+      
+      const fetchCall = mockFetch.getCall(0);
+      expect(fetchCall.args[1]).to.exist;
+    });
+  });
+
+  describe('Authentication Retry Logic', () => {
+    it('should retry request when auth handler provides new headers', async () => {
+      const retryAuthHandler = new MockAuthHandler();
+      const shouldRetrySpy = sinon.spy(retryAuthHandler, 'shouldRetryWithHeaders');
+      const onSuccessSpy = sinon.spy(retryAuthHandler, 'onSuccess');
+      
+      const retryFetch = new AuthHandlingFetch(mockFetch, retryAuthHandler);
+      
+      // Mock fetch to return 401 first, then 200
+      let callCount = 0;
+      const retryMockFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
+        callCount++;
+        if (callCount === 1) {
+          // First call: return 401
+          return createFreshResponse(1, {
+            jsonrpc: '2.0',
+            error: {
+              code: -32001,
+              message: 'Authentication required'
+            },
+            id: 1
+          }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
+        } else {
+          // Second call: return success
+          return createFreshResponse(1, {
+            jsonrpc: '2.0',
+            result: { success: true },
+            id: 1
+          });
+        }
+      });
+      
+      const retryAuthFetch = new AuthHandlingFetch(retryMockFetch, retryAuthHandler);
+      
+      const response = await retryAuthFetch('https://test.example.com/api');
+      
+      expect(retryMockFetch.callCount).to.equal(2);
+      expect(shouldRetrySpy.called).to.be.true;
+      expect(onSuccessSpy.called).to.be.true;
+      expect(response.status).to.equal(200);
+    });
+
+    it('should not retry when auth handler returns undefined', async () => {
+      const noRetryAuthHandler = new MockAuthHandler();
+      const shouldRetrySpy = sinon.stub(noRetryAuthHandler, 'shouldRetryWithHeaders');
+      shouldRetrySpy.resolves(undefined);
+      
+      const noRetryFetch = new AuthHandlingFetch(mockFetch, noRetryAuthHandler);
+      
+      // Mock fetch to return 401
+      const noRetryMockFetch = sinon.stub().callsFake(async () => {
+        return createFreshResponse(1, {
+          jsonrpc: '2.0',
+          error: {
+            code: -32001,
+            message: 'Authentication required'
+          },
+          id: 1
+        }, 401);
+      });
+      
+      const noRetryAuthFetch = new AuthHandlingFetch(noRetryMockFetch, noRetryAuthHandler);
+      
+      const response = await noRetryAuthFetch('https://test.example.com/api');
+      
+      expect(noRetryMockFetch.callCount).to.equal(1);
+      expect(shouldRetrySpy.called).to.be.true;
+      expect(response.status).to.equal(401);
+    });
+
+    it('should handle 403 responses with retry logic', async () => {
+      const forbiddenAuthHandler = new MockAuthHandler();
+      const shouldRetrySpy = sinon.spy(forbiddenAuthHandler, 'shouldRetryWithHeaders');
+      
+      const forbiddenFetch = new AuthHandlingFetch(mockFetch, forbiddenAuthHandler);
+      
+      // Mock fetch to return 403 first, then 200
+      let callCount = 0;
+      const forbiddenMockFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
+        callCount++;
+        if (callCount === 1) {
+          // First call: return 403
+          return createFreshResponse(1, {
+            jsonrpc: '2.0',
+            error: {
+              code: -32001,
+              message: 'Forbidden'
+            },
+            id: 1
+          }, 403, { 'WWW-Authenticate': 'Agentic challenge123' });
+        } else {
+          // Second call: return success
+          return createFreshResponse(1, {
+            jsonrpc: '2.0',
+            result: { success: true },
+            id: 1
+          });
+        }
+      });
+      
+      const forbiddenAuthFetch = new AuthHandlingFetch(forbiddenMockFetch, forbiddenAuthHandler);
+      
+      const response = await forbiddenAuthFetch('https://test.example.com/api');
+      
+      expect(forbiddenMockFetch.callCount).to.equal(2);
+      expect(shouldRetrySpy.called).to.be.true;
+      expect(response.status).to.equal(200);
+    });
+  });
+
+  describe('Success Callback', () => {
+    it('should call onSuccess when retry succeeds', async () => {
+      const successAuthHandler = new MockAuthHandler();
+      const onSuccessSpy = sinon.spy(successAuthHandler, 'onSuccess');
+      
+      const successFetch = new AuthHandlingFetch(mockFetch, successAuthHandler);
+      
+      // Mock fetch to return 401 first, then 200
+      let callCount = 0;
+      const successMockFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
+        callCount++;
+        if (callCount === 1) {
+          return createFreshResponse(1, {
+            jsonrpc: '2.0',
+            error: {
+              code: -32001,
+              message: 'Authentication required'
+            },
+            id: 1
+          }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
+        } else {
+          return createFreshResponse(1, {
+            jsonrpc: '2.0',
+            result: { success: true },
+            id: 1
+          });
+        }
+      });
+      
+      const successAuthFetch = new AuthHandlingFetch(successMockFetch, successAuthHandler);
+      
+      await successAuthFetch('https://test.example.com/api');
+      
+      expect(onSuccessSpy.called).to.be.true;
+      expect(onSuccessSpy.firstCall.args[0]).to.deep.include({
+        'Authorization': 'Agentic challenge123.challenge123'
+      });
+    });
+
+    it('should not call onSuccess when retry fails', async () => {
+      const failAuthHandler = new MockAuthHandler();
+      const onSuccessSpy = sinon.spy(failAuthHandler, 'onSuccess');
+      
+      const failFetch = new AuthHandlingFetch(mockFetch, failAuthHandler);
+      
+      // Mock fetch to return 401 first, then 401 again
+      let callCount = 0;
+      const failMockFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
+        callCount++;
+        return createFreshResponse(1, {
+          jsonrpc: '2.0',
+          error: {
+            code: -32001,
+            message: 'Authentication required'
+          },
+          id: 1
+        }, 401);
+      });
+      
+      const failAuthFetch = new AuthHandlingFetch(failMockFetch, failAuthHandler);
+      
+      const response = await failAuthFetch('https://test.example.com/api');
+      
+      expect(onSuccessSpy.called).to.be.false;
+      expect(response.status).to.equal(401);
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should propagate fetch errors', async () => {
+      const errorFetch = sinon.stub().rejects(new Error('Network error'));
+      const errorAuthFetch = new AuthHandlingFetch(errorFetch, authHandler);
+      
+      try {
+        await errorAuthFetch('https://test.example.com/api');
+        expect.fail('Expected error to be thrown');
+      } catch (error) {
+        expect(error).to.be.instanceOf(Error);
+        expect((error as Error).message).to.include('Network error');
+      }
+    });
+
+    it('should handle auth handler errors gracefully', async () => {
+      const errorAuthHandler = new MockAuthHandler();
+      const shouldRetrySpy = sinon.stub(errorAuthHandler, 'shouldRetryWithHeaders');
+      shouldRetrySpy.rejects(new Error('Auth handler error'));
+      
+      const errorAuthFetch = new AuthHandlingFetch(mockFetch, errorAuthHandler);
+      
+      try {
+        await errorAuthFetch('https://test.example.com/api');
+        expect.fail('Expected error to be thrown');
+      } catch (error) {
+        expect(error).to.be.instanceOf(Error);
+        expect((error as Error).message).to.include('Auth handler error');
+      }
+    });
+  });
+
+  describe('Integration with A2AClient', () => {
+    it('should work as fetch implementation in A2AClient', async () => {
+      const clientWithAuthFetch = new A2AClient('https://test-agent.example.com', {
+        fetchImpl: authHandlingFetch as unknown as typeof fetch
+      });
+
+      const messageParams: MessageSendParams = {
+        message: {
+          kind: 'message',
+          messageId: 'test-msg-auth-fetch',
+          role: 'user',
+          parts: [{
+            kind: 'text',
+            text: 'Test with AuthHandlingFetch'
+          } as TextPart]
+        }
+      };
+
+      const result = await clientWithAuthFetch.sendMessage(messageParams);
+
+      expect(isSuccessResponse(result)).to.be.true;
+      if (isSuccessResponse(result)) {
+        expect(result.result).to.have.property('kind', 'message');
+      }
     });
   });
 });
