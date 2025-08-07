@@ -7,8 +7,6 @@ import { AgentCard, MessageSendParams, TextPart, Message, SendMessageResponse, S
 import { extractRequestId, createResponse, createAgentCardResponse, createMockAgentCard } from './util.js';
 
 
-
-
 // Challenge manager class for authentication testing
 class ChallengeManager {
   private challengeStore: Set<string> = new Set();
@@ -47,8 +45,6 @@ function createMockFetch() {
     return createFreshMockFetch(url, options);
   });
 }
-
-
 
 // Helper function to create fresh mock fetch responses
 function createFreshMockFetch(url: string, options?: RequestInit) {
@@ -163,7 +159,7 @@ describe('A2AClient Authentication Tests', () => {
     // Use AuthHandlingFetch to wrap the mock fetch with authentication handling
     const authHandlingFetch = new AuthHandlingFetch(mockFetch, authHandler);
     client = new A2AClient('https://test-agent.example.com', {
-      fetchImpl: authHandlingFetch as unknown as typeof fetch
+      fetchImpl: authHandlingFetch
     });
   });
 
@@ -519,7 +515,7 @@ describe('A2AClient Authentication Tests', () => {
 
       const authHandlingFetch = new AuthHandlingFetch(authHeaderTestFetch, authHandler);
       const clientAuthTest = new A2AClient('https://test-agent.example.com', {
-        fetchImpl: authHandlingFetch as unknown as typeof fetch
+        fetchImpl: authHandlingFetch
       });
 
       const messageParams: MessageSendParams = {
@@ -1075,7 +1071,7 @@ describe('AuthHandlingFetch Tests', () => {
   describe('Integration with A2AClient', () => {
     it('should work as fetch implementation in A2AClient', async () => {
       const clientWithAuthFetch = new A2AClient('https://test-agent.example.com', {
-        fetchImpl: authHandlingFetch as unknown as typeof fetch
+        fetchImpl: authHandlingFetch
       });
 
       const messageParams: MessageSendParams = {
