@@ -29,8 +29,10 @@ export interface AuthenticationHandler {
     headers: () => Promise<HttpHeaders>;
 
     /**
-     * Called to check if the HTTP request should be retried with *new* headers.  New headers
-     * are usually needed when the HTTP response issues a 401 or 403.  If this function returns
+     * This method will be always called after each request is executed.  Handler can check if
+     * there are auth related failures and if the request needs to be retried with revised headers.
+     *
+     * New headers are usually needed when the HTTP response issues a 401 or 403.  If this function returns
      * new HTTP headers, then the request should be retried with the revised headers.
      *
      * Note that the new headers returned by this request may be transient, and might only be saved
