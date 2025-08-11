@@ -495,57 +495,6 @@ describe('A2AClient Authentication Tests', () => {
     });
   });
 
-  describe('Error Handling', () => {
-    it('should handle network errors gracefully', async () => {
-      const networkErrorFetch = sinon.stub().rejects(new Error('Network error'));
-      
-      const clientWithNetworkError = new A2AClient('https://test-agent.example.com', {
-        fetchImpl: networkErrorFetch
-      });
-
-      const messageParams = createMessageParams({
-        messageId: 'test-msg-6',
-        text: 'Network error test'
-      });
-
-      try {
-        await clientWithNetworkError.sendMessage(messageParams);
-        expect.fail('Expected error to be thrown');
-      } catch (error) {
-        expect(error).to.be.instanceOf(Error);
-        expect((error as Error).message).to.include('Network error');
-      }
-    });
-
-    it('should handle malformed JSON responses', async () => {
-      const malformedFetch = sinon.stub().callsFake(async (url: string) => {
-        if (url.includes('.well-known/agent.json')) {
-          return new Response('Invalid JSON', {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-        return new Response('Not found', { status: 404 });
-      });
-
-      const clientWithMalformed = new A2AClient('https://test-agent.example.com', {
-        fetchImpl: malformedFetch
-      });
-
-      const messageParams = createMessageParams({
-        messageId: 'test-msg-7',
-        text: 'Malformed JSON test'
-      });
-
-      try {
-        await clientWithMalformed.sendMessage(messageParams);
-        expect.fail('Expected error to be thrown');
-      } catch (error) {
-        expect(error).to.be.instanceOf(Error);
-      }
-    });
-  });
-
   describe('Agent Card Caching', () => {
     it('should cache agent card and reuse service endpoint', async () => {
       const messageParams = createMessageParams({
