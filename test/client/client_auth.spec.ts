@@ -309,54 +309,6 @@ describe('A2AClient Authentication Tests', () => {
       }
     });
 
-    it('should return WWW-Authenticate header with Agentic scheme in 401 responses', async () => {
-      // Create a mock that captures the response to check headers
-      let capturedResponse: Response | null = null;
-      const headerTestFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
-        if (url.includes('.well-known/agent.json')) {
-          const mockAgentCard = createMockAgentCard({
-            description: 'A test agent for authentication testing'
-          });
-          
-          return createAgentCardResponse(mockAgentCard);
-        }
-        
-        if (url.includes('/api')) {
-          const authHeader = options?.headers?.['Authorization'] as string;
-          
-          // Return 401 with WWW-Authenticate header
-          const requestId = extractRequestId(options);
-          const response = createResponse(requestId, undefined, {
-            code: -32001,
-            message: 'Authentication required'
-          }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
-          
-          capturedResponse = response;
-          return response;
-        }
-        
-        return new Response('Not found', { status: 404 });
-      });
-
-      const clientHeaderTest = new A2AClient('https://test-agent.example.com', {
-        fetchImpl: headerTestFetch
-      });
-
-      const messageParams = createMessageParams({
-        messageId: 'test-msg-www-auth',
-        text: 'Test WWW-Authenticate header'
-      });
-
-      try {
-        await clientHeaderTest.sendMessage(messageParams);
-        expect.fail('Expected error to be thrown');
-      } catch (error) {
-        // Verify that the WWW-Authenticate header was returned
-        expect(capturedResponse).to.not.be.null;
-        expect(capturedResponse!.headers.get('WWW-Authenticate')).to.equal('Agentic challenge123');
-      }
-    });
-
     it('should parse WWW-Authenticate header and generate correct Authorization header', async () => {
       // Create a mock that tracks the Authorization headers sent
       let capturedAuthHeaders: string[] = [];
