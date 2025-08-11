@@ -59,38 +59,22 @@ export interface AuthenticationHandler {
 }
 
 /**
- * A fetch wrapper that handles authentication logic including retries for 401/403 responses.
- * This class can be used as a drop-in replacement for the native fetch function.
+ * Higher-order function that wraps fetch with authentication handling logic.
+ * Returns a new fetch function that automatically handles authentication retries for 401/403 responses.
+ * 
+ * @param fetchImpl The underlying fetch implementation to wrap
+ * @param authHandler Authentication handler for managing auth headers and retries
+ * @returns A new fetch function with authentication handling capabilities
  * 
  * Usage examples:
- * - const authFetch = new AuthHandlingFetch(fetch, authHandler);
+ * - const authFetch = createAuthHandlingFetch(fetch, authHandler);
  * - const response = await authFetch(url, options);
  * - const response = await authFetch(url); // Direct function call
  */
-export class AuthHandlingFetch extends Function {
-  private fetchImpl: typeof fetch;
-  private authHandler: AuthenticationHandler;
-
-  /**
-   * Constructs an AuthHandlingFetch instance.
-   * @param fetchImpl The underlying fetch implementation to wrap
-   * @param authHandler Authentication handler for managing auth headers and retries
-   */
-  constructor(fetchImpl: typeof fetch, authHandler: AuthenticationHandler) {
-    super();
-    this.fetchImpl = fetchImpl;
-    this.authHandler = authHandler;
-    
-    // Make the instance callable
-    const boundFetch = this._executeFetch.bind(this);
-    Object.setPrototypeOf(boundFetch, AuthHandlingFetch.prototype);
-    
-    // Bind the fetch method to the instance
-    boundFetch.fetch = this.fetch.bind(this);
-    
-    return boundFetch as any;
-  }
-
+export function createAuthenticatingFetchWithRetry(
+  fetchImpl: typeof fetch,
+  authHandler: AuthenticationHandler
+): typeof fetch {
   /**
    * Executes a fetch request with authentication handling.
    * If the auth handler provides new headers for the shouldRetryWithHeaders() function, 
@@ -99,19 +83,9 @@ export class AuthHandlingFetch extends Function {
    * @param init The fetch request options
    * @returns A Promise that resolves to the Response
    */
-  async fetch(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-    return this._executeFetch(url, init);
-  }
-
-  /**
-   * Internal method to execute fetch with authentication handling.
-   * @param url The URL to fetch
-   * @param init The fetch request options
-   * @returns A Promise that resolves to the Response
-   */
-  public async _executeFetch(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  async function authFetch(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     // Merge auth headers with provided headers
-    const authHeaders = await this.authHandler.headers() || {};
+    const authHeaders = await authHandler.headers() || {};
     const mergedInit: RequestInit = {
       ...(init || {}),
       headers: {
@@ -120,10 +94,10 @@ export class AuthHandlingFetch extends Function {
       },
     };
 
-    let response = await this.fetchImpl(url, mergedInit);
+    let response = await fetchImpl(url, mergedInit);
 
     // Check if the auth handler wants to retry the request with new headers
-    const updatedHeaders = await this.authHandler.shouldRetryWithHeaders(mergedInit, response);
+    const updatedHeaders = await authHandler.shouldRetryWithHeaders(mergedInit, response);
     if (updatedHeaders) {
       // Retry request with revised headers
       const retryInit: RequestInit = {
@@ -133,13 +107,19 @@ export class AuthHandlingFetch extends Function {
           ...(init?.headers || {}),
         },
       };
-      response = await this.fetchImpl(url, retryInit);
+      response = await fetchImpl(url, retryInit);
       
-      if (response.ok && this.authHandler.onSuccessfulRetry) {
-        await this.authHandler.onSuccessfulRetry(updatedHeaders); // Remember headers that worked
+      if (response.ok && authHandler.onSuccessfulRetry) {
+        await authHandler.onSuccessfulRetry(updatedHeaders); // Remember headers that worked
       }
     }
 
     return response;
   }
+
+  // Copy fetch properties to maintain compatibility
+  Object.setPrototypeOf(authFetch, Object.getPrototypeOf(fetchImpl));
+  Object.defineProperties(authFetch, Object.getOwnPropertyDescriptors(fetchImpl));
+
+  return authFetch;
 }

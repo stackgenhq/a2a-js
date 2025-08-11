@@ -2,8 +2,8 @@ import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import sinon from 'sinon';
 import { A2AClient } from '../../src/client/client.js';
-import { AuthenticationHandler, HttpHeaders, AuthHandlingFetch } from '../../src/client/auth-handler.js';
-import { AgentCard, MessageSendParams, TextPart, Message, SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
+import { AuthenticationHandler, HttpHeaders, createAuthenticatingFetchWithRetry } from '../../src/client/auth-handler.js';
+import {SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
 import { extractRequestId, createResponse, createAgentCardResponse, createMockAgentCard, createMessageParams, createMockMessage } from './util.js';
 
 
@@ -101,8 +101,8 @@ function createFreshMockFetch(url: string, options?: RequestInit) {
 class MockAuthHandler implements AuthenticationHandler {
   private authorization: string | null = null;
 
-  headers(): HttpHeaders {
-    return this.authorization ? { 'Authorization': this.authorization } : {}
+  async headers(): Promise<HttpHeaders> {
+    return this.authorization ? { 'Authorization': this.authorization } : {};
   }
 
   async shouldRetryWithHeaders(req: RequestInit, res: Response): Promise<HttpHeaders | undefined> {
@@ -122,7 +122,7 @@ class MockAuthHandler implements AuthenticationHandler {
     return { 'Authorization': `Agentic ${token}` };
   }
 
-  async onSuccess(headers: HttpHeaders): Promise<void> {
+  async onSuccessfulRetry(headers: HttpHeaders): Promise<void> {
     // Remember successful authorization header
     const auth = headers['Authorization'];
     if (auth)
@@ -151,7 +151,7 @@ describe('A2AClient Authentication Tests', () => {
     
     authHandler = new MockAuthHandler();
     // Use AuthHandlingFetch to wrap the mock fetch with authentication handling
-    const authHandlingFetch = new AuthHandlingFetch(mockFetch, authHandler);
+    const authHandlingFetch = createAuthenticatingFetchWithRetry(mockFetch, authHandler);
     client = new A2AClient('https://test-agent.example.com', {
       fetchImpl: authHandlingFetch
     });
@@ -226,6 +226,14 @@ describe('A2AClient Authentication Tests', () => {
       
       // Create a new mock for the second request that expects auth header
       mockFetch.callsFake(async (url: string, options?: RequestInit) => {
+        if (url.includes('.well-known/agent.json')) {
+          const mockAgentCard = createMockAgentCard({
+            description: 'A test agent for authentication testing'
+          });
+          
+          return createAgentCardResponse(mockAgentCard);
+        }
+        
         if (url.includes('/api')) {
           const authHeader = options?.headers?.['Authorization'] as string;
           if (authHeader && authHeader.startsWith('Agentic ')) {
@@ -323,7 +331,7 @@ describe('A2AClient Authentication Tests', () => {
       const authHandlerSpy = {
         headers: sinon.spy(authHandler, 'headers'),
         shouldRetryWithHeaders: sinon.spy(authHandler, 'shouldRetryWithHeaders'),
-        onSuccess: sinon.spy(authHandler, 'onSuccess')
+        onSuccess: sinon.spy(authHandler, 'onSuccessfulRetry')
       };
 
       const messageParams = createMessageParams({
@@ -393,7 +401,6 @@ describe('A2AClient Authentication Tests', () => {
       });
 
       const clientHeaderTest = new A2AClient('https://test-agent.example.com', {
-        authHandler,
         fetchImpl: headerTestFetch
       });
 
@@ -452,7 +459,7 @@ describe('A2AClient Authentication Tests', () => {
         return new Response('Not found', { status: 404 });
       });
 
-      const authHandlingFetch = new AuthHandlingFetch(authHeaderTestFetch, authHandler);
+      const authHandlingFetch = createAuthenticatingFetchWithRetry(authHeaderTestFetch, authHandler);
       const clientAuthTest = new A2AClient('https://test-agent.example.com', {
         fetchImpl: authHandlingFetch
       });
@@ -505,7 +512,6 @@ describe('A2AClient Authentication Tests', () => {
       });
 
       const clientNoAuth = new A2AClient('https://test-agent.example.com', {
-        authHandler,
         fetchImpl: noAuthRequiredFetch
       });
 
@@ -604,7 +610,6 @@ describe('A2AClient Authentication Tests', () => {
       const networkErrorFetch = sinon.stub().rejects(new Error('Network error'));
       
       const clientWithNetworkError = new A2AClient('https://test-agent.example.com', {
-        authHandler,
         fetchImpl: networkErrorFetch
       });
 
@@ -634,7 +639,6 @@ describe('A2AClient Authentication Tests', () => {
       });
 
       const clientWithMalformed = new A2AClient('https://test-agent.example.com', {
-        authHandler,
         fetchImpl: malformedFetch
       });
 
@@ -708,7 +712,7 @@ describe('AuthHandlingFetch Tests', () => {
   beforeEach(() => {
     mockFetch = createMockFetch();
     authHandler = new MockAuthHandler();
-    authHandlingFetch = new AuthHandlingFetch(mockFetch, authHandler);
+    authHandlingFetch = createAuthenticatingFetchWithRetry(mockFetch, authHandler);
   });
 
   afterEach(() => {
@@ -718,7 +722,8 @@ describe('AuthHandlingFetch Tests', () => {
   describe('Constructor and Function Call', () => {
     it('should create a callable instance', () => {
       expect(typeof authHandlingFetch).to.equal('function');
-      expect(authHandlingFetch).to.be.instanceOf(AuthHandlingFetch);
+      // The function returned by createAuthenticatingFetchWithRetry is callable
+      expect(typeof authHandlingFetch).to.equal('function');
     });
 
     it('should support direct function calls', async () => {
@@ -727,7 +732,9 @@ describe('AuthHandlingFetch Tests', () => {
     });
 
     it('should support fetch method calls', async () => {
-      const response = await authHandlingFetch.fetch('https://test.example.com/api');
+      // The function returned by createAuthenticatingFetchWithRetry doesn't have a .fetch method
+      // It's directly callable, so we test that instead
+      const response = await authHandlingFetch('https://test.example.com/api');
       expect(response).to.be.instanceOf(Response);
     });
   });
@@ -761,7 +768,7 @@ describe('AuthHandlingFetch Tests', () => {
 
     it('should handle empty headers gracefully', async () => {
       const emptyAuthHandler = new MockAuthHandler();
-      const emptyAuthFetch = new AuthHandlingFetch(mockFetch, emptyAuthHandler);
+      const emptyAuthFetch = createAuthenticatingFetchWithRetry(mockFetch, emptyAuthHandler);
       
       await emptyAuthFetch('https://test.example.com/api');
       
@@ -774,9 +781,7 @@ describe('AuthHandlingFetch Tests', () => {
     it('should retry request when auth handler provides new headers', async () => {
       const retryAuthHandler = new MockAuthHandler();
       const shouldRetrySpy = sinon.spy(retryAuthHandler, 'shouldRetryWithHeaders');
-      const onSuccessSpy = sinon.spy(retryAuthHandler, 'onSuccess');
-      
-      const retryFetch = new AuthHandlingFetch(mockFetch, retryAuthHandler);
+      const onSuccessSpy = sinon.spy(retryAuthHandler, 'onSuccessfulRetry');
       
       // Mock fetch to return 401 first, then 200
       let callCount = 0;
@@ -796,7 +801,7 @@ describe('AuthHandlingFetch Tests', () => {
         }
       });
       
-      const retryAuthFetch = new AuthHandlingFetch(retryMockFetch, retryAuthHandler);
+      const retryAuthFetch = createAuthenticatingFetchWithRetry(retryMockFetch, retryAuthHandler);
       
       const response = await retryAuthFetch('https://test.example.com/api');
       
@@ -811,8 +816,6 @@ describe('AuthHandlingFetch Tests', () => {
       const shouldRetrySpy = sinon.stub(noRetryAuthHandler, 'shouldRetryWithHeaders');
       shouldRetrySpy.resolves(undefined);
       
-      const noRetryFetch = new AuthHandlingFetch(mockFetch, noRetryAuthHandler);
-      
       // Mock fetch to return 401
       const noRetryMockFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
         const requestId = extractRequestId(options);
@@ -822,7 +825,7 @@ describe('AuthHandlingFetch Tests', () => {
         }, 401);
       });
       
-      const noRetryAuthFetch = new AuthHandlingFetch(noRetryMockFetch, noRetryAuthHandler);
+      const noRetryAuthFetch = createAuthenticatingFetchWithRetry(noRetryMockFetch, noRetryAuthHandler);
       
       const response = await noRetryAuthFetch('https://test.example.com/api');
       
@@ -834,8 +837,6 @@ describe('AuthHandlingFetch Tests', () => {
     it('should handle 403 responses with retry logic', async () => {
       const forbiddenAuthHandler = new MockAuthHandler();
       const shouldRetrySpy = sinon.spy(forbiddenAuthHandler, 'shouldRetryWithHeaders');
-      
-      const forbiddenFetch = new AuthHandlingFetch(mockFetch, forbiddenAuthHandler);
       
       // Mock fetch to return 403 first, then 200
       let callCount = 0;
@@ -855,7 +856,7 @@ describe('AuthHandlingFetch Tests', () => {
         }
       });
       
-      const forbiddenAuthFetch = new AuthHandlingFetch(forbiddenMockFetch, forbiddenAuthHandler);
+      const forbiddenAuthFetch = createAuthenticatingFetchWithRetry(forbiddenMockFetch, forbiddenAuthHandler);
       
       const response = await forbiddenAuthFetch('https://test.example.com/api');
       
@@ -868,9 +869,9 @@ describe('AuthHandlingFetch Tests', () => {
   describe('Success Callback', () => {
     it('should call onSuccess when retry succeeds', async () => {
       const successAuthHandler = new MockAuthHandler();
-      const onSuccessSpy = sinon.spy(successAuthHandler, 'onSuccess');
+      const onSuccessSpy = sinon.spy(successAuthHandler, 'onSuccessfulRetry');
       
-      const successFetch = new AuthHandlingFetch(mockFetch, successAuthHandler);
+      const successFetch = createAuthenticatingFetchWithRetry(mockFetch, successAuthHandler);
       
       // Mock fetch to return 401 first, then 200
       let callCount = 0;
@@ -888,7 +889,7 @@ describe('AuthHandlingFetch Tests', () => {
         }
       });
       
-      const successAuthFetch = new AuthHandlingFetch(successMockFetch, successAuthHandler);
+      const successAuthFetch = createAuthenticatingFetchWithRetry(successMockFetch, successAuthHandler);
       
       await successAuthFetch('https://test.example.com/api');
       
@@ -900,9 +901,9 @@ describe('AuthHandlingFetch Tests', () => {
 
     it('should not call onSuccess when retry fails', async () => {
       const failAuthHandler = new MockAuthHandler();
-      const onSuccessSpy = sinon.spy(failAuthHandler, 'onSuccess');
+      const onSuccessSpy = sinon.spy(failAuthHandler, 'onSuccessfulRetry');
       
-      const failFetch = new AuthHandlingFetch(mockFetch, failAuthHandler);
+      const failFetch = createAuthenticatingFetchWithRetry(mockFetch, failAuthHandler);
       
       // Mock fetch to return 401 first, then 401 again
       let callCount = 0;
@@ -915,7 +916,7 @@ describe('AuthHandlingFetch Tests', () => {
         }, 401);
       });
       
-      const failAuthFetch = new AuthHandlingFetch(failMockFetch, failAuthHandler);
+      const failAuthFetch = createAuthenticatingFetchWithRetry(failMockFetch, failAuthHandler);
       
       const response = await failAuthFetch('https://test.example.com/api');
       
@@ -927,7 +928,7 @@ describe('AuthHandlingFetch Tests', () => {
   describe('Error Handling', () => {
     it('should propagate fetch errors', async () => {
       const errorFetch = sinon.stub().rejects(new Error('Network error'));
-      const errorAuthFetch = new AuthHandlingFetch(errorFetch, authHandler);
+      const errorAuthFetch = createAuthenticatingFetchWithRetry(errorFetch, authHandler);
       
       try {
         await errorAuthFetch('https://test.example.com/api');
@@ -943,7 +944,7 @@ describe('AuthHandlingFetch Tests', () => {
       const shouldRetrySpy = sinon.stub(errorAuthHandler, 'shouldRetryWithHeaders');
       shouldRetrySpy.rejects(new Error('Auth handler error'));
       
-      const errorAuthFetch = new AuthHandlingFetch(mockFetch, errorAuthHandler);
+      const errorAuthFetch = createAuthenticatingFetchWithRetry(mockFetch, errorAuthHandler);
       
       try {
         await errorAuthFetch('https://test.example.com/api');
