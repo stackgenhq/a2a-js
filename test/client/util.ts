@@ -93,18 +93,7 @@ export function createResponse(
     jsonRpcResponse.result = result;
   }
   
-  // Create a fresh body each time to avoid "Body is unusable" errors
-  const body = JSON.stringify(jsonRpcResponse);
-  
-  // Create a ReadableStream to ensure the body can be read multiple times
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode(body));
-      controller.close();
-    }
-  });
-  
-  return new Response(stream, {
+  return new Response(JSON.stringify(jsonRpcResponse), {
     status,
     headers: responseHeaders
   });
