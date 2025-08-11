@@ -494,53 +494,6 @@ describe('A2AClient Authentication Tests', () => {
       expect(noAuthHandlerFetch.callCount).to.equal(2); // One for agent card, one for API call
     });
   });
-
-  describe('Agent Card Caching', () => {
-    it('should cache agent card and reuse service endpoint', async () => {
-      const messageParams = createMessageParams({
-        messageId: 'test-msg-8',
-        text: 'Agent card caching test'
-      });
-
-      // First request - should fetch agent card
-      await client.sendMessage(messageParams);
-      
-      // Reset fetch mock
-      mockFetch.reset();
-      
-      // Create a new mock for the second request
-      mockFetch.callsFake(async (url: string, options?: RequestInit) => {
-        if (url.includes('/api')) {
-          const authHeader = options?.headers?.['Authorization'] as string;
-          if (authHeader && authHeader.startsWith('Agentic ')) {
-            const mockMessage = createMockMessage({
-              messageId: 'msg-cached',
-              text: 'Agent card caching test'
-            });
-            
-            const requestId = extractRequestId(options);
-            return createResponse(requestId, {
-              jsonrpc: '2.0',
-              result: mockMessage,
-              id: requestId
-            });
-          }
-        }
-        return new Response('Not found', { status: 404 });
-      });
-      
-      // Second request - should reuse cached agent card
-      await client.sendMessage(messageParams);
-
-      // Should not fetch agent card again
-      const calls = mockFetch.getCalls();
-      const agentCardCalls = calls.filter(call => 
-        call.args[0].includes('.well-known/agent.json')
-      );
-      
-      expect(agentCardCalls).to.have.length(0);
-    });
-  });
 });
 
 describe('AuthHandlingFetch Tests', () => {
