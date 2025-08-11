@@ -31,6 +31,7 @@ import {
   A2AError,
   SendMessageSuccessResponse
 } from '../types.js'; // Assuming schema.ts is in the same directory or appropriately pathed
+import { AGENT_CARD_PATH } from "../constants.js";
 
 // Helper type for the data yielded by streaming methods
 type A2AStreamEventData = Message | Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent;
@@ -45,7 +46,6 @@ export interface A2AClientOptions {
  */
 export class A2AClient {
   private agentCardPromise: Promise<AgentCard>;
-  private static readonly DEFAULT_AGENT_CARD_PATH = ".well-known/agent.json";
   private requestIdCounter: number = 1;
   private serviceEndpointUrl?: string; // To be populated from AgentCard after fetching
   private fetchImpl: typeof fetch;
@@ -53,7 +53,7 @@ export class A2AClient {
   /**
    * Constructs an A2AClient instance.
    * It initiates fetching the agent card from the provided agent baseUrl.
-   * The Agent Card is fetched from a path relative to the agentBaseUrl, which defaults to '.well-known/agent.json'.
+   * The Agent Card is fetched from a path relative to the agentBaseUrl, which defaults to '.well-known/agent-card.json'.
    * The `url` field from the Agent Card will be used as the RPC service endpoint.
    * @param agentBaseUrl The base URL of the A2A agent (e.g., https://agent.example.com)
    * @param options Optional. The options for the A2AClient including the fetch implementation, agent card path, and authentication handler.
@@ -97,7 +97,7 @@ export class A2AClient {
    * If an `agentBaseUrl` is provided, it fetches the card from that specific URL.
    * Otherwise, it returns the card fetched and cached during client construction.
    * @param agentBaseUrl Optional. The base URL of the agent to fetch the card from.
-   * @param agentCardPath path to the agent card, defaults to .well-known/agent.json
+   * @param agentCardPath path to the agent card, defaults to .well-known/agent-card.json
    * If provided, this will fetch a new card, not use the cached one from the constructor's URL.
    * @returns A Promise that resolves to the AgentCard.
    */
