@@ -110,9 +110,6 @@ describe('A2AClient Basic Tests', () => {
       // First call
       await client.getAgentCard();
       
-      // Reset fetch mock
-      mockFetch.reset();
-      
       // Second call - should not fetch agent card again
       await client.getAgentCard();
       
@@ -120,7 +117,7 @@ describe('A2AClient Basic Tests', () => {
         call.args[0].includes('.well-known/agent.json')
       );
       
-      expect(agentCardCalls).to.have.length(0);
+      expect(agentCardCalls).to.have.length(1);
     });
 
     it('should handle agent card fetch errors', async () => {
