@@ -514,18 +514,9 @@ describe('AuthHandlingFetch Tests', () => {
   describe('Constructor and Function Call', () => {
     it('should create a callable instance', () => {
       expect(typeof authHandlingFetch).to.equal('function');
-      // The function returned by createAuthenticatingFetchWithRetry is callable
-      expect(typeof authHandlingFetch).to.equal('function');
     });
 
     it('should support direct function calls', async () => {
-      const response = await authHandlingFetch('https://test.example.com/api');
-      expect(response).to.be.instanceOf(Response);
-    });
-
-    it('should support fetch method calls', async () => {
-      // The function returned by createAuthenticatingFetchWithRetry doesn't have a .fetch method
-      // It's directly callable, so we test that instead
       const response = await authHandlingFetch('https://test.example.com/api');
       expect(response).to.be.instanceOf(Response);
     });
