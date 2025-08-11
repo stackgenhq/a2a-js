@@ -71,7 +71,11 @@ describe('A2AClient Basic Tests', () => {
 
   describe('Client Initialization', () => {
     it('should initialize client with default options', () => {
-      const basicClient = new A2AClient('https://test-agent.example.com');
+      // Use a mock fetch to avoid real HTTP requests during testing
+      const mockFetchForDefault = createMockFetch();
+      const basicClient = new A2AClient('https://test-agent.example.com', {
+        fetchImpl: mockFetchForDefault
+      });
       expect(basicClient).to.be.instanceOf(A2AClient);
     });
 
