@@ -4,6 +4,7 @@ import sinon from 'sinon';
 import { A2AClient } from '../../src/client/client.js';
 import { AuthenticationHandler, HttpHeaders, createAuthenticatingFetchWithRetry } from '../../src/client/auth-handler.js';
 import {SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
+import { AGENT_CARD_PATH } from '../../src/constants.js';
 import { extractRequestId, createResponse, createAgentCardResponse, createMockAgentCard, createMessageParams, createMockMessage } from './util.js';
 
 
@@ -49,7 +50,7 @@ function createMockFetch() {
 // Helper function to create fresh mock fetch responses
 function createFreshMockFetch(url: string, options?: RequestInit) {
   // Simulate agent card fetch
-  if (url.includes('.well-known/agent.json')) {
+  if (url.includes(AGENT_CARD_PATH)) {
     const mockAgentCard = createMockAgentCard({
       description: 'A test agent for authentication testing'
     });
@@ -177,7 +178,7 @@ describe('A2AClient Authentication Tests', () => {
       expect(mockFetch.callCount).to.equal(3);
       
       // First call: agent card fetch
-      expect(mockFetch.firstCall.args[0]).to.equal('https://test-agent.example.com/.well-known/agent.json');
+      expect(mockFetch.firstCall.args[0]).to.equal(`https://test-agent.example.com/${AGENT_CARD_PATH}`);
       expect(mockFetch.firstCall.args[1]).to.deep.include({
         headers: { 'Accept': 'application/json' }
       });
@@ -226,7 +227,7 @@ describe('A2AClient Authentication Tests', () => {
       
       // Create a new mock for the second request that expects auth header
       mockFetch.callsFake(async (url: string, options?: RequestInit) => {
-        if (url.includes('.well-known/agent.json')) {
+        if (url.includes(AGENT_CARD_PATH)) {
           const mockAgentCard = createMockAgentCard({
             description: 'A test agent for authentication testing'
           });
@@ -313,7 +314,7 @@ describe('A2AClient Authentication Tests', () => {
       // Create a mock that tracks the Authorization headers sent
       let capturedAuthHeaders: string[] = [];
       const authHeaderTestFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
-        if (url.includes('.well-known/agent.json')) {
+        if (url.includes(AGENT_CARD_PATH)) {
           const mockAgentCard = createMockAgentCard({
             description: 'A test agent for authentication testing'
           });
@@ -376,7 +377,7 @@ describe('A2AClient Authentication Tests', () => {
       // Create a mock that doesn't require authentication
       let capturedAuthHeaders: string[] = [];
       const noAuthRequiredFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
-        if (url.includes('.well-known/agent.json')) {
+        if (url.includes(AGENT_CARD_PATH)) {
           const mockAgentCard = createMockAgentCard({
             description: 'A test agent that does not require authentication'
           });
@@ -430,7 +431,7 @@ describe('A2AClient Authentication Tests', () => {
     it('should fail gracefully when no authHandler is provided and server returns 401', async () => {
       // Create a mock that returns 401 without authHandler
       const noAuthHandlerFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
-        if (url.includes('.well-known/agent.json')) {
+        if (url.includes(AGENT_CARD_PATH)) {
           const mockAgentCard = createMockAgentCard({
             description: 'A test agent that requires authentication'
           });
@@ -499,7 +500,7 @@ describe('A2AClient Authentication Tests', () => {
 describe('AuthHandlingFetch Tests', () => {
   let mockFetch: sinon.SinonStub;
   let authHandler: MockAuthHandler;
-  let authHandlingFetch: AuthHandlingFetch;
+  let authHandlingFetch: ReturnType<typeof createAuthenticatingFetchWithRetry>;
 
   beforeEach(() => {
     mockFetch = createMockFetch();

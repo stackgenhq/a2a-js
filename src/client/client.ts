@@ -67,7 +67,7 @@ export class A2AClient {
    * Fetches the Agent Card from the agent's well-known URI and caches its service endpoint URL.
    * This method is called by the constructor.
    * @param agentBaseUrl The base URL of the A2A agent (e.g., https://agent.example.com)
-   * @param agentCardPath path to the agent card, defaults to .well-known/agent.json
+   * @param agentCardPath path to the agent card, defaults to .well-known/agent-card.json
    * @returns A Promise that resolves to the AgentCard.
    */
   private async _fetchAndCacheAgentCard( agentBaseUrl: string, agentCardPath?: string ): Promise<AgentCard> {
@@ -120,9 +120,9 @@ export class A2AClient {
   /**
    * Determines the agent card URL based on the agent URL.
    * @param agentBaseUrl The agent URL.
-   * @param agentCardPath Optional relative path to the agent card, defaults to .well-known/agent.json
+   * @param agentCardPath Optional relative path to the agent card, defaults to .well-known/agent-card.json
    */
-  private resolveAgentCardUrl( agentBaseUrl: string, agentCardPath: string = A2AClient.DEFAULT_AGENT_CARD_PATH ): string {
+  private resolveAgentCardUrl( agentBaseUrl: string, agentCardPath: string = AGENT_CARD_PATH ): string {
     return `${agentBaseUrl.replace(/\/$/, "")}/${agentCardPath.replace(/^\//, "")}`;
   }
 

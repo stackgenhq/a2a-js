@@ -3,6 +3,7 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { A2AClient } from '../../src/client/client.js';
 import { AgentCard, MessageSendParams, TextPart, Message, SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
+import { AGENT_CARD_PATH } from '../../src/constants.js';
 import { extractRequestId, createResponse, createAgentCardResponse, createMockAgentCard, createMockMessage } from './util.js';
 
 
@@ -19,7 +20,7 @@ function createMockFetch() {
 // Helper function to create fresh mock fetch responses
 function createFreshMockFetch(url: string, options?: RequestInit) {
     // Simulate agent card fetch
-    if (url.includes('.well-known/agent.json')) {
+    if (url.includes(AGENT_CARD_PATH)) {
       const mockAgentCard = createMockAgentCard({
         description: 'A test agent for basic client testing'
       });
@@ -88,7 +89,7 @@ describe('A2AClient Basic Tests', () => {
       
       expect(mockFetch.callCount).to.be.greaterThan(0);
       const agentCardCall = mockFetch.getCalls().find(call => 
-        call.args[0].includes('.well-known/agent.json')
+        call.args[0].includes(AGENT_CARD_PATH)
       );
       expect(agentCardCall).to.exist;
     });
@@ -114,7 +115,7 @@ describe('A2AClient Basic Tests', () => {
       await client.getAgentCard();
       
       const agentCardCalls = mockFetch.getCalls().filter(call => 
-        call.args[0].includes('.well-known/agent.json')
+        call.args[0].includes(AGENT_CARD_PATH)
       );
       
       expect(agentCardCalls).to.have.length(1);
@@ -122,7 +123,7 @@ describe('A2AClient Basic Tests', () => {
 
     it('should handle agent card fetch errors', async () => {
       const errorFetch = sinon.stub().callsFake(async (url: string) => {
-        if (url.includes('.well-known/agent.json')) {
+        if (url.includes(AGENT_CARD_PATH)) {
           return new Response('Not found', { status: 404 });
         }
         return new Response('Not found', { status: 404 });
@@ -186,7 +187,7 @@ describe('A2AClient Basic Tests', () => {
 
     it('should handle message sending errors', async () => {
       const errorFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
-        if (url.includes('.well-known/agent.json')) {
+        if (url.includes(AGENT_CARD_PATH)) {
           const mockAgentCard = createMockAgentCard({
             description: 'A test agent for error testing'
           });
@@ -250,7 +251,7 @@ describe('A2AClient Basic Tests', () => {
 
     it('should handle malformed JSON responses', async () => {
       const malformedFetch = sinon.stub().callsFake(async (url: string) => {
-        if (url.includes('.well-known/agent.json')) {
+        if (url.includes(AGENT_CARD_PATH)) {
           return new Response('Invalid JSON', {
             status: 200,
             headers: { 'Content-Type': 'application/json' }
@@ -273,7 +274,7 @@ describe('A2AClient Basic Tests', () => {
 
     it('should handle missing agent card URL', async () => {
       const missingUrlFetch = sinon.stub().callsFake(async (url: string) => {
-        if (url.includes('.well-known/agent.json')) {
+        if (url.includes(AGENT_CARD_PATH)) {
           const invalidAgentCard = {
             name: 'Test Agent',
             description: 'A test agent without URL',
