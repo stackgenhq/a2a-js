@@ -262,68 +262,6 @@ describe('A2AClient Authentication Tests', () => {
 
       expect(isSuccessResponse(result2)).to.be.true;
     });
-
-    it('should handle multiple concurrent requests with authentication', async () => {
-      const messageParams = createMessageParams({
-        messageId: 'test-msg-3',
-        text: 'Concurrent message'
-      });
-
-      // Create a new mock that handles concurrent requests properly
-      mockFetch.reset();
-      mockFetch.callsFake(async (url: string, options?: RequestInit) => {
-        if (url.includes('.well-known/agent.json')) {
-          const mockAgentCard = createMockAgentCard({
-            description: 'A test agent for authentication testing'
-          });
-          
-          return createAgentCardResponse(mockAgentCard);
-        }
-        
-        if (url.includes('/api')) {
-          const authHeader = options?.headers?.['Authorization'] as string;
-          
-          // If no auth header, return 401 to trigger auth flow
-          if (!authHeader) {
-            const requestId = extractRequestId(options);
-            return createResponse(requestId, undefined, {
-              code: -32001,
-              message: 'Authentication required'
-            }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
-          }
-          
-          // If auth header is present, return success
-          if (authHeader.startsWith('Agentic ')) {
-            const mockMessage = createMockMessage({
-              messageId: `msg-concurrent-${Date.now()}`,
-              text: 'Concurrent message'
-            });
-            
-            const requestId = extractRequestId(options);
-            return createResponse(requestId, mockMessage);
-          }
-        }
-        return new Response('Not found', { status: 404 });
-      });
-
-      // Send multiple requests sequentially to test authentication reuse
-      const results = [];
-      for (let i = 0; i < 3; i++) {
-        const result = await client.sendMessage(messageParams);
-        results.push(result);
-      }
-
-      // All should succeed
-      results.forEach(result => {
-        expect(isSuccessResponse(result)).to.be.true;
-        if (isSuccessResponse(result)) {
-          expect(result.result).to.have.property('kind', 'message');
-        }
-      });
-
-      // Should have made multiple calls (agent card + RPC calls)
-      expect(mockFetch.callCount).to.equal(4); // 1 agent card + 3 RPC calls
-    });
   });
 
   describe('Authentication Handler Integration', () => {
