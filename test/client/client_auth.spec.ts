@@ -322,7 +322,7 @@ describe('A2AClient Authentication Tests', () => {
       }
     });
 
-    it('should fail gracefully when no authHandler is provided and server returns 401', async () => {
+    it('Client pipes server errors when no auth handler is specified', async () => {
       // Create a mock that returns 401 without authHandler
       const noAuthHandlerFetch = createMockFetch({
         agentDescription: 'A test agent that requires authentication',
