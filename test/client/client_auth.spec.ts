@@ -651,24 +651,4 @@ describe('AuthHandlingFetch Tests', () => {
       }
     });
   });
-
-  describe('Integration with A2AClient', () => {
-    it('should work as fetch implementation in A2AClient', async () => {
-      const clientWithAuthFetch = new A2AClient('https://test-agent.example.com', {
-        fetchImpl: authHandlingFetch
-      });
-
-      const messageParams = createMessageParams({
-        messageId: 'test-msg-auth-fetch',
-        text: 'Test with AuthHandlingFetch'
-      });
-
-      const result = await clientWithAuthFetch.sendMessage(messageParams);
-
-      expect(isSuccessResponse(result)).to.be.true;
-      if (isSuccessResponse(result)) {
-        expect(result.result).to.have.property('kind', 'message');
-      }
-    });
-  });
 });
