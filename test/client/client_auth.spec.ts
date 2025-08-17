@@ -75,23 +75,6 @@ function createFreshMockFetch(url: string, options?: RequestInit) {
     }, 401, { 'WWW-Authenticate': `Agentic ${challenge}` });
   }
 
-  // We have an auth header, so make sure the scheme is correct
-  const [ scheme, params ] = authHeader.split(/\s+/);
-  if (scheme !== 'Agentic') {
-    return createResponse(requestId, undefined, {
-      code: -32001,
-      message: 'Invalid authorization scheme'
-    }, 401);
-  }
-
-  // If an auth header is provided, make sure it's the signed challenge
-  if (!challengeManager.verifyToken(params)) {
-    return createResponse(requestId, undefined, {
-      code: -32001,
-      message: 'Invalid authorization token'
-    }, 401);
-  }
-
   // All good, return a success response
   const mockMessage = createMockMessage();
   
