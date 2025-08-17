@@ -213,24 +213,21 @@ describe('A2AClient Authentication Tests', () => {
       );
       const firstRequestToken = firstRequestAuthCall?.args[1]?.headers?.['Authorization'];
       
-      // Reset calls to clear the first request
-      mockFetch.reset();
-      
-      // Ensure the mock is still properly configured after reset
-      mockFetch.callsFake(createFreshMockFetch);
-      
       // Second request - should use existing token
       const result2 = await client.sendMessage(messageParams);
 
-      // Should only be called once (no retry needed)
-      expect(mockFetch.callCount).to.equal(1);
+      // Total calls should be 4: 3 for first request + 1 for second request (both agent card and auth token cached)
+      expect(mockFetch.callCount).to.equal(4);
       
-      // Should include auth header immediately from cached token
-      expect(mockFetch.firstCall.args[0]).to.equal('https://test-agent.example.com/api');
-      expect(mockFetch.firstCall.args[1].headers).to.have.property('Authorization');
+      // Second request should start from call #4 (after the first 3 calls)
+      const secondRequestCalls = mockFetch.getCalls().slice(3);
+      
+      // Only one call for second request: RPC request with auth header (agent card and token cached)
+      expect(secondRequestCalls[0].args[0]).to.equal('https://test-agent.example.com/api');
+      expect(secondRequestCalls[0].args[1].headers).to.have.property('Authorization');
       
       // Should use the exact same token from the first request
-      expect(mockFetch.firstCall.args[1].headers['Authorization']).to.equal(firstRequestToken);
+      expect(secondRequestCalls[0].args[1].headers['Authorization']).to.equal(firstRequestToken);
 
       expect(isSuccessResponse(result2)).to.be.true;
     });
