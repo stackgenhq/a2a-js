@@ -29,11 +29,6 @@ export interface AuthenticationHandler {
      * New headers are usually needed when the HTTP response issues a 401 or 403.  If this function returns
      * new HTTP headers, then the request should be retried with the revised headers.
      *
-     * Note that the new headers returned by this request may be transient, and might only be saved
-     * when the onSuccessfulRetry() function is called, or otherwise discarded.  This is an
-     * implementation detail of an AuthenticationHandler.  If the headers are transient, then
-     * the onSuccessfulRetry() function should be implemented to save the headers for subsequent
-     * requests.
      * @param req The RequestInit object used to invoke fetch()
      * @param res The fetch Response object
      * @returns If the HTTP request should be retried then returns the HTTP headers to use,
