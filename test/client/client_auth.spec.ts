@@ -72,7 +72,7 @@ function createFreshMockFetch(url: string, options?: RequestInit) {
     return createResponse(requestId, undefined, {
       code: -32001,
       message: 'Authentication required'
-    }, 401, { 'WWW-Authenticate': `Agentic ${challenge}` });
+    }, 401, { 'WWW-Authenticate': `Bearer ${challenge}` });
   }
 
   // All good, return a success response
@@ -96,14 +96,14 @@ class MockAuthHandler implements AuthenticationHandler {
 
     // Parse WWW-Authenticate header to extract the token68/challenge value
     const [scheme, challenge] = res.headers.get('WWW-Authenticate')?.split(/\s+/) || [];
-    if (scheme !== 'Agentic')
-      return undefined;  // Not handled, only Agentic is supported
+    if (scheme !== 'Bearer')
+      return undefined;  // Not the type we expected for this test
 
     // Use the ChallengeManager to sign the challenge
     const token = ChallengeManager.signChallenge(challenge);
       
     // have the client try the token, BUT don't save it in case the client doesn't accept it
-    return { 'Authorization': `Agentic ${token}` };
+    return { 'Authorization': `Bearer ${token}` };
   }
 
   async onSuccessfulRetry(headers: HttpHeaders): Promise<void> {
@@ -186,7 +186,8 @@ describe('A2AClient Authentication Tests', () => {
       expect(mockFetch.thirdCall.args[1].headers).to.have.property('Content-Type', 'application/json');
       expect(mockFetch.thirdCall.args[1].headers).to.have.property('Accept', 'application/json');
       expect(mockFetch.thirdCall.args[1].headers).to.have.property('Authorization');
-      expect(mockFetch.thirdCall.args[1].headers['Authorization']).to.match(/^Agentic .+$/);
+      
+      expect(mockFetch.thirdCall.args[1].headers['Authorization']).to.match(/^Bearer .+$/);
       expect(mockFetch.thirdCall.args[1].body).to.include('"method":"message/send"');
 
       // Verify the result
@@ -302,7 +303,7 @@ describe('A2AClient Authentication Tests', () => {
             return createResponse(requestId, undefined, {
               code: -32001,
               message: 'Authentication required'
-            }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
+            }, 401, { 'WWW-Authenticate': 'Bearer challenge123' });
           }
           
           // Second call: with Authorization header, return success
@@ -424,7 +425,7 @@ describe('A2AClient Authentication Tests', () => {
             status: 401,
             headers: { 
               'Content-Type': 'application/json',
-              'WWW-Authenticate': 'Agentic challenge123'
+              'WWW-Authenticate': 'Bearer challenge123'
             }
           });
         }
@@ -545,7 +546,7 @@ describe('AuthHandlingFetch Tests', () => {
           return createResponse(requestId, undefined, {
             code: -32001,
             message: 'Authentication required'
-          }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
+          }, 401, { 'WWW-Authenticate': 'Bearer challenge123' });
         } else {
           const requestId = extractRequestId(options);
           return createResponse(requestId, { success: true });
@@ -558,7 +559,7 @@ describe('AuthHandlingFetch Tests', () => {
       
       expect(onSuccessSpy.called).to.be.true;
       expect(onSuccessSpy.firstCall.args[0]).to.deep.include({
-        'Authorization': 'Agentic challenge123.challenge123'
+        'Authorization': 'Bearer challenge123.challenge123'
       });
     });
 
