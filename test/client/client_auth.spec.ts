@@ -451,16 +451,8 @@ describe('A2AClient Authentication Tests', () => {
             },
             id: requestId
           });
-          
-          // Create a Response that can be read multiple times
-          const stream = new ReadableStream({
-            start(controller) {
-              controller.enqueue(new TextEncoder().encode(errorBody));
-              controller.close();
-            }
-          });
-          
-          return new Response(stream, {
+                    
+          return new Response(errorBody, {
             status: 401,
             headers: { 
               'Content-Type': 'application/json',
