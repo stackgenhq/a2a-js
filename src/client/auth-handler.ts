@@ -23,11 +23,10 @@ export interface AuthenticationHandler {
     headers: () => Promise<HttpHeaders>;
 
     /**
-     * This method will be always called after each request is executed.  Handler can check if
-     * there are auth related failures and if the request needs to be retried with revised headers.
-     *
-     * New headers are usually needed when the HTTP response issues a 401 or 403.  If this function returns
-     * new HTTP headers, then the request should be retried with the revised headers.
+     * For every HTTP response (even 200s) the shouldRetryWithHeaders() method is called.
+     * This method is supposed to check if the request needs to be retried and if, yes,
+     * return a set of headers. An A2A server might indicate auth failures in its response
+     * by JSON-rpc codes, HTTP codes like 401, 403 or headers like WWW-Authenticate.
      *
      * @param req The RequestInit object used to invoke fetch()
      * @param res The fetch Response object
