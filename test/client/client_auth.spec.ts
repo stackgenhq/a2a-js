@@ -220,35 +220,20 @@ describe('A2AClient Authentication Tests', () => {
       });
 
       // First request - should trigger auth flow
-      await client.sendMessage(messageParams);
+      const result1 = await client.sendMessage(messageParams);
       
-      // Reset calls
+      // Capture the token from the first request
+      const firstRequestAuthCall = mockFetch.getCalls().find(call => 
+        call.args[0].includes('/api') && 
+        call.args[1]?.headers?.['Authorization']
+      );
+      const firstRequestToken = firstRequestAuthCall?.args[1]?.headers?.['Authorization'];
+      
+      // Reset calls to clear the first request
       mockFetch.reset();
       
-      // Create a new mock for the second request that expects auth header
-      mockFetch.callsFake(async (url: string, options?: RequestInit) => {
-        if (url.includes(AGENT_CARD_PATH)) {
-          const mockAgentCard = createMockAgentCard({
-            description: 'A test agent for authentication testing'
-          });
-          
-          return createAgentCardResponse(mockAgentCard);
-        }
-        
-        if (url.includes('/api')) {
-          const authHeader = options?.headers?.['Authorization'] as string;
-          if (authHeader && authHeader.startsWith('Agentic ')) {
-            const mockMessage = createMockMessage({
-              messageId: 'msg-second',
-              text: 'Second message'
-            });
-            
-            const requestId = extractRequestId(options);
-            return createResponse(requestId, mockMessage);
-          }
-        }
-        return new Response('Not found', { status: 404 });
-      });
+      // Ensure the mock is still properly configured after reset
+      mockFetch.callsFake(createFreshMockFetch);
       
       // Second request - should use existing token
       const result2 = await client.sendMessage(messageParams);
@@ -256,10 +241,12 @@ describe('A2AClient Authentication Tests', () => {
       // Should only be called once (no retry needed)
       expect(mockFetch.callCount).to.equal(1);
       
-      // Should include auth header immediately
+      // Should include auth header immediately from cached token
       expect(mockFetch.firstCall.args[0]).to.equal('https://test-agent.example.com/api');
       expect(mockFetch.firstCall.args[1].headers).to.have.property('Authorization');
-      expect(mockFetch.firstCall.args[1].headers['Authorization']).to.match(/^Agentic .+$/);
+      
+      // Should use the exact same token from the first request
+      expect(mockFetch.firstCall.args[1].headers['Authorization']).to.equal(firstRequestToken);
 
       expect(isSuccessResponse(result2)).to.be.true;
     });
