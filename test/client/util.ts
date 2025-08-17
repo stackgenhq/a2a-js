@@ -43,15 +43,7 @@ export function createAgentCardResponse(
   // Create a fresh body each time to avoid "Body is unusable" errors
   const body = JSON.stringify(data);
   
-  // Create a ReadableStream to ensure the body can be read multiple times
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode(body));
-      controller.close();
-    }
-  });
-  
-  return new Response(stream, {
+  return new Response(body, {
     status,
     headers: responseHeaders
   });

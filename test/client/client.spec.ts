@@ -9,16 +9,9 @@ import { extractRequestId, createResponse, createAgentCardResponse, createMockAg
 
 
 
-// Factory function to create fresh mock fetch functions
+// Factory function to create mock fetch functions
 function createMockFetch() {
   return sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
-    // Create a fresh mock fetch for each call to avoid Response body reuse issues
-    return createFreshMockFetch(url, options);
-  });
-}
-
-// Helper function to create fresh mock fetch responses
-function createFreshMockFetch(url: string, options?: RequestInit) {
     // Simulate agent card fetch
     if (url.includes(AGENT_CARD_PATH)) {
       const mockAgentCard = createMockAgentCard({
@@ -39,6 +32,7 @@ function createFreshMockFetch(url: string, options?: RequestInit) {
     const mockMessage = createMockMessage();
     
     return createResponse(requestId, mockMessage);
+  });
 }
 
 // Helper function to check if response is a success response
