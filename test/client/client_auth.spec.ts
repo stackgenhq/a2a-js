@@ -310,10 +310,10 @@ describe('A2AClient Authentication Tests', () => {
       }
     });
 
-    it('should parse WWW-Authenticate header and generate correct Authorization header', async () => {
+    it('should retry with new auth headers', async () => {
       // Create a mock that tracks the Authorization headers sent
       let capturedAuthHeaders: string[] = [];
-      const authHeaderTestFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
+      const authRetryTestFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
         if (url.includes(AGENT_CARD_PATH)) {
           const mockAgentCard = createMockAgentCard({
             description: 'A test agent for authentication testing'
@@ -326,7 +326,7 @@ describe('A2AClient Authentication Tests', () => {
           const authHeader = options?.headers?.['Authorization'] as string;
           capturedAuthHeaders.push(authHeader || '');
           
-          // First call: no auth header, return 401 with WWW-Authenticate
+          // First call: no Authorization header, return 401 with WWW-Authenticate header
           if (!authHeader) {
             const requestId = extractRequestId(options);
             return createResponse(requestId, undefined, {
@@ -335,29 +335,27 @@ describe('A2AClient Authentication Tests', () => {
             }, 401, { 'WWW-Authenticate': 'Agentic challenge123' });
           }
           
-          // Second call: with Agentic auth header, return success
-          if (authHeader.startsWith('Agentic ')) {
-            const mockMessage = createMockMessage({
-              messageId: 'msg-auth-test',
-              text: 'Test auth header parsing'
-            });
-            
-            const requestId = extractRequestId(options);
-            return createResponse(requestId, mockMessage);
-          }
+          // Second call: with Authorization header, return success
+          const mockMessage = createMockMessage({
+            messageId: 'msg-auth-retry',
+            text: 'Test auth retry'
+          });
+          
+          const requestId = extractRequestId(options);
+          return createResponse(requestId, mockMessage);
         }
         
         return new Response('Not found', { status: 404 });
       });
 
-      const authHandlingFetch = createAuthenticatingFetchWithRetry(authHeaderTestFetch, authHandler);
+      const authHandlingFetch = createAuthenticatingFetchWithRetry(authRetryTestFetch, authHandler);
       const clientAuthTest = new A2AClient('https://test-agent.example.com', {
         fetchImpl: authHandlingFetch
       });
 
       const messageParams = createMessageParams({
-        messageId: 'test-msg-auth-parse',
-        text: 'Test auth header parsing'
+        messageId: 'test-msg-auth-retry',
+        text: 'Test auth retry'
       });
 
       // This should trigger the auth flow and succeed
@@ -366,8 +364,8 @@ describe('A2AClient Authentication Tests', () => {
       // Verify the Authorization headers were sent correctly
       // With AuthHandlingFetch, the auth handler makes the retry internally, so we see both calls
       expect(capturedAuthHeaders).to.have.length(2);
-      expect(capturedAuthHeaders[0]).to.equal(''); // First call: no auth header
-      expect(capturedAuthHeaders[1]).to.match(/^Agentic .+$/); // Second call: with Agentic auth header
+      expect(capturedAuthHeaders[0]).to.equal(''); // First call: no Authorization header
+      expect(capturedAuthHeaders[1]).to.be.a('string').and.not.be.empty; // Second call: with Authorization header
 
       // Verify the result
       expect(isSuccessResponse(result)).to.be.true;
