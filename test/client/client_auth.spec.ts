@@ -563,15 +563,14 @@ describe('AuthHandlingFetch Tests', () => {
   });
 
   describe('Success Callback', () => {
-    it('should call onSuccess when retry succeeds', async () => {
+    it('should call onSuccessfulRetry when retry succeeds', async () => {
       const successAuthHandler = new MockAuthHandler();
       const onSuccessSpy = sinon.spy(successAuthHandler, 'onSuccessfulRetry');
       
-      const successFetch = createAuthenticatingFetchWithRetry(mockFetch, successAuthHandler);
-      
-      // Mock fetch to return 401 first, then 200
+      // Create a modified version of the existing mockFetch that returns 401 first, then 200
       let callCount = 0;
-      const successMockFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
+      const successMockFetch = createMockFetch();
+      successMockFetch.callsFake(async (url: string, options?: RequestInit) => {
         callCount++;
         if (callCount === 1) {
           const requestId = extractRequestId(options);
@@ -595,7 +594,7 @@ describe('AuthHandlingFetch Tests', () => {
       });
     });
 
-    it('should not call onSuccess when retry fails', async () => {
+    it('should not call onSuccessfulRetry when retry fails', async () => {
       const failAuthHandler = new MockAuthHandler();
       const onSuccessSpy = sinon.spy(failAuthHandler, 'onSuccessfulRetry');
       
@@ -603,7 +602,8 @@ describe('AuthHandlingFetch Tests', () => {
       
       // Mock fetch to return 401 first, then 401 again
       let callCount = 0;
-      const failMockFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
+      const failMockFetch = createMockFetch();
+      failMockFetch.callsFake(async (url: string, options?: RequestInit) => {
         callCount++;
         const requestId = extractRequestId(options);
         return createResponse(requestId, undefined, {
