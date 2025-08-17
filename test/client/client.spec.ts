@@ -2,38 +2,9 @@ import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import sinon from 'sinon';
 import { A2AClient } from '../../src/client/client.js';
-import { AgentCard, MessageSendParams, TextPart, Message, SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
+import { MessageSendParams, TextPart, SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
 import { AGENT_CARD_PATH } from '../../src/constants.js';
-import { extractRequestId, createResponse, createAgentCardResponse, createMockAgentCard, createMockMessage } from './util.js';
-
-
-
-
-// Factory function to create mock fetch functions
-function createMockFetch() {
-  return sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
-    // Simulate agent card fetch
-    if (url.includes(AGENT_CARD_PATH)) {
-      const mockAgentCard = createMockAgentCard({
-        description: 'A test agent for basic client testing'
-      });
-      
-      return createAgentCardResponse(mockAgentCard);
-    }
-    
-    // Simulate RPC endpoint calls
-    if (!url.includes('/api'))
-      return new Response('Not found', { status: 404 });
-
-    // Extract request ID from the request body
-    const requestId = extractRequestId(options);
-
-    // Basic RPC response with matching request ID
-    const mockMessage = createMockMessage();
-    
-    return createResponse(requestId, mockMessage);
-  });
-}
+import { extractRequestId, createResponse, createAgentCardResponse, createMockAgentCard, createMockFetch } from './util.js';
 
 // Helper function to check if response is a success response
 function isSuccessResponse(response: SendMessageResponse): response is SendMessageSuccessResponse {

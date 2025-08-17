@@ -2,6 +2,9 @@
  * Utility functions for A2A client tests
  */
 
+import sinon from 'sinon';
+import { AGENT_CARD_PATH } from '../../src/constants.js';
+
 /**
  * Extracts the request ID from a RequestInit options object.
  * Parses the JSON body and returns the 'id' field, or 1 as default.
@@ -199,4 +202,128 @@ export function createMockMessage(options: {
       text: text
     }]
   };
+}
+
+/**
+ * Configuration options for creating mock fetch functions
+ */
+export interface MockFetchConfig {
+  /** Whether the mock should require authentication */
+  requiresAuth?: boolean;
+  /** Custom agent card description */
+  agentDescription?: string;
+  /** Custom message configuration */
+  messageConfig?: {
+    messageId?: string;
+    text?: string;
+  };
+  /** Custom error configuration for auth failures */
+  authErrorConfig?: {
+    code?: number;
+    message?: string;
+    challenge?: string;
+  };
+  /** Whether to capture auth headers for testing */
+  captureAuthHeaders?: boolean;
+  /** Behavior mode for the mock fetch */
+  behavior?: 'standard' | 'authRetry' | 'alwaysFail';
+}
+
+/**
+ * Creates a mock fetch function with configurable behavior.
+ * This is the single function that replaces all previous mock fetch utilities.
+ * 
+ * @param config - Configuration options for the mock fetch behavior
+ * @returns A sinon stub that can be used as a mock fetch implementation, with capturedAuthHeaders attached as a property
+ */
+export function createMockFetch(config: MockFetchConfig = {}): sinon.SinonStub & { capturedAuthHeaders: string[] } {
+  const {
+    requiresAuth = false, // Default to no auth required for basic testing
+    agentDescription = 'A test agent for basic client testing',
+    messageConfig = {
+      messageId: 'msg-123',
+      text: 'Hello, agent!'
+    },
+    authErrorConfig = {
+      code: -32001,
+      message: 'Authentication required',
+      challenge: 'challenge123'
+    },
+    captureAuthHeaders = false,
+    behavior = 'standard'
+  } = config;
+
+  let callCount = 0;
+  const capturedAuthHeaders: string[] = [];
+  
+  const mockFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
+    // Handle agent card requests
+    if (url.includes(AGENT_CARD_PATH)) {
+      const mockAgentCard = createMockAgentCard({
+        description: agentDescription
+      });
+      return createAgentCardResponse(mockAgentCard);
+    }
+    
+    // Handle API requests
+    if (url.includes('/api')) {
+      const authHeader = options?.headers?.['Authorization'] as string;
+      
+      // Capture auth headers if requested
+      if (captureAuthHeaders) {
+        capturedAuthHeaders.push(authHeader || '');
+      }
+      
+      const requestId = extractRequestId(options);
+      
+      // Determine response based on behavior
+      switch (behavior) {
+        case 'alwaysFail':
+          // Always return 401 for API calls
+          return createResponse(requestId, undefined, {
+            code: authErrorConfig.code!,
+            message: authErrorConfig.message!
+          }, 401, { 'WWW-Authenticate': `Bearer ${authErrorConfig.challenge}` });
+          
+        case 'authRetry':
+          // First call: return 401 to trigger auth flow
+          if (callCount === 0) {
+            callCount++;
+            return createResponse(requestId, undefined, {
+              code: authErrorConfig.code!,
+              message: authErrorConfig.message!
+            }, 401, { 'WWW-Authenticate': `Bearer ${authErrorConfig.challenge}` });
+          }
+          // Subsequent calls: return success
+          break;
+          
+        case 'standard':
+        default:
+          // If authentication is required and no valid header is present
+          if (requiresAuth && !authHeader) {
+            return createResponse(requestId, undefined, {
+              code: authErrorConfig.code!,
+              message: authErrorConfig.message!
+            }, 401, { 'WWW-Authenticate': `Bearer ${authErrorConfig.challenge}` });
+          }
+          break;
+      }
+      
+      // Return success response
+      const mockMessage = createMockMessage({
+        messageId: messageConfig.messageId || 'msg-123',
+        text: messageConfig.text || 'Hello, agent!'
+      });
+      
+      return createResponse(requestId, mockMessage);
+    }
+    
+    // Default: return 404 for unknown endpoints
+    return new Response('Not found', { status: 404 });
+  });
+
+  // Attach the capturedAuthHeaders as a property to the mock fetch function
+  (mockFetch as any).capturedAuthHeaders = capturedAuthHeaders;
+
+  return mockFetch as sinon.SinonStub & { capturedAuthHeaders: string[] };
 }

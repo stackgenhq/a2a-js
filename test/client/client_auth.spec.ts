@@ -5,7 +5,10 @@ import { A2AClient } from '../../src/client/client.js';
 import { AuthenticationHandler, HttpHeaders, createAuthenticatingFetchWithRetry } from '../../src/client/auth-handler.js';
 import {SendMessageResponse, SendMessageSuccessResponse } from '../../src/types.js';
 import { AGENT_CARD_PATH } from '../../src/constants.js';
-import { extractRequestId, createResponse, createAgentCardResponse, createMockAgentCard, createMessageParams, createMockMessage } from './util.js';
+import { 
+  createMessageParams, 
+  createMockFetch
+} from './util.js';
 
 
 // Challenge manager class for authentication testing
@@ -38,48 +41,6 @@ class ChallengeManager {
 }
 
 const challengeManager = new ChallengeManager();
-
-// Factory function to create fresh mock fetch functions
-function createMockFetch() {
-  return sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
-    // Create a fresh mock fetch for each call to avoid Response body reuse issues
-    return createFreshMockFetch(url, options);
-  });
-}
-
-// Helper function to create fresh mock fetch responses
-function createFreshMockFetch(url: string, options?: RequestInit) {
-  // Simulate agent card fetch
-  if (url.includes(AGENT_CARD_PATH)) {
-    const mockAgentCard = createMockAgentCard({
-      description: 'A test agent for authentication testing'
-    });
-    
-    return createAgentCardResponse(mockAgentCard);
-  }
-  
-  // Simulate RPC endpoint calls
-  if (!url.includes('/api'))
-    return new Response('Not found', { status: 404 });
-
-  const requestId = extractRequestId(options);
-  const authHeader = options?.headers?.['Authorization'] as string;
-  
-  // If there is no auth header, return a 401 with a challenge that needs to be signed (e.g. using a private key)
-  if (!authHeader) {
-    const challenge = challengeManager.createChallenge();
-
-    return createResponse(requestId, undefined, {
-      code: -32001,
-      message: 'Authentication required'
-    }, 401, { 'WWW-Authenticate': `Bearer ${challenge}` });
-  }
-
-  // All good, return a success response
-  const mockMessage = createMockMessage();
-  
-  return createResponse(requestId, mockMessage);
-}
 
 // Mock authentication handler that simulates generating tokens and confirming signatures
 class MockAuthHandler implements AuthenticationHandler {
@@ -131,7 +92,15 @@ describe('A2AClient Authentication Tests', () => {
     console.error = () => {};
     
     // Create a fresh mock fetch for each test
-    mockFetch = createMockFetch();
+    mockFetch = createMockFetch({
+      requiresAuth: true,
+      agentDescription: 'A test agent for authentication testing',
+      authErrorConfig: {
+        code: -32001,
+        message: 'Authentication required',
+        challenge: challengeManager.createChallenge()
+      }
+    });
     
     authHandler = new MockAuthHandler();
     // Use AuthHandlingFetch to wrap the mock fetch with authentication handling
@@ -280,41 +249,16 @@ describe('A2AClient Authentication Tests', () => {
 
     it('should retry with new auth headers', async () => {
       // Create a mock that tracks the Authorization headers sent
-      let capturedAuthHeaders: string[] = [];
-      const authRetryTestFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
-        if (url.includes(AGENT_CARD_PATH)) {
-          const mockAgentCard = createMockAgentCard({
-            description: 'A test agent for authentication testing'
-          });
-          
-          return createAgentCardResponse(mockAgentCard);
-        }
-        
-        if (url.includes('/api')) {
-          const authHeader = options?.headers?.['Authorization'] as string;
-          capturedAuthHeaders.push(authHeader || '');
-          
-          // First call: no Authorization header, return 401 with WWW-Authenticate header
-          if (!authHeader) {
-            const requestId = extractRequestId(options);
-            return createResponse(requestId, undefined, {
-              code: -32001,
-              message: 'Authentication required'
-            }, 401, { 'WWW-Authenticate': 'Bearer challenge123' });
-          }
-          
-          // Second call: with Authorization header, return success
-          const mockMessage = createMockMessage({
-            messageId: 'msg-auth-retry',
-            text: 'Test auth retry'
-          });
-          
-          const requestId = extractRequestId(options);
-          return createResponse(requestId, mockMessage);
-        }
-        
-        return new Response('Not found', { status: 404 });
+      const authRetryTestFetch = createMockFetch({
+        agentDescription: 'A test agent for authentication testing',
+        messageConfig: {
+          messageId: 'msg-auth-retry',
+          text: 'Test auth retry'
+        },
+        captureAuthHeaders: true,
+        behavior: 'authRetry'
       });
+      const { capturedAuthHeaders } = authRetryTestFetch;
 
       const authHandlingFetch = createAuthenticatingFetchWithRetry(authRetryTestFetch, authHandler);
       const clientAuthTest = new A2AClient('https://test-agent.example.com', {
@@ -341,32 +285,16 @@ describe('A2AClient Authentication Tests', () => {
 
     it('should continue without authentication when server does not return 401', async () => {
       // Create a mock that doesn't require authentication
-      let capturedAuthHeaders: string[] = [];
-      const noAuthRequiredFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
-        if (url.includes(AGENT_CARD_PATH)) {
-          const mockAgentCard = createMockAgentCard({
-            description: 'A test agent that does not require authentication'
-          });
-          
-          return createAgentCardResponse(mockAgentCard);
-        }
-        
-        if (url.includes('/api')) {
-          const authHeader = options?.headers?.['Authorization'] as string;
-          capturedAuthHeaders.push(authHeader || '');
-          
-          // Always return success without requiring authentication
-          const mockMessage = createMockMessage({
-            messageId: 'msg-no-auth-required',
-            text: 'Test without authentication'
-          });
-          
-          const requestId = extractRequestId(options);
-          return createResponse(requestId, mockMessage);
-        }
-        
-        return new Response('Not found', { status: 404 });
+      const noAuthRequiredFetch = createMockFetch({
+        requiresAuth: false,
+        agentDescription: 'A test agent that does not require authentication',
+        messageConfig: {
+          messageId: 'msg-no-auth-required',
+          text: 'Test without authentication'
+        },
+        captureAuthHeaders: true
       });
+      const { capturedAuthHeaders } = noAuthRequiredFetch;
 
       const clientNoAuth = new A2AClient('https://test-agent.example.com', {
         fetchImpl: noAuthRequiredFetch
@@ -396,38 +324,9 @@ describe('A2AClient Authentication Tests', () => {
 
     it('should fail gracefully when no authHandler is provided and server returns 401', async () => {
       // Create a mock that returns 401 without authHandler
-      const noAuthHandlerFetch = sinon.stub().callsFake(async (url: string, options?: RequestInit) => {
-        if (url.includes(AGENT_CARD_PATH)) {
-          const mockAgentCard = createMockAgentCard({
-            description: 'A test agent that requires authentication'
-          });
-          
-          return createAgentCardResponse(mockAgentCard);
-        }
-        
-        if (url.includes('/api')) {
-          // Always return 401 to simulate authentication required
-          // Create a new Response each time to avoid body reuse issues
-          const requestId = extractRequestId(options);
-          const errorBody = JSON.stringify({
-            jsonrpc: '2.0',
-            error: {
-              code: -32001,
-              message: 'Authentication required'
-            },
-            id: requestId
-          });
-                    
-          return new Response(errorBody, {
-            status: 401,
-            headers: { 
-              'Content-Type': 'application/json',
-              'WWW-Authenticate': 'Bearer challenge123'
-            }
-          });
-        }
-        
-        return new Response('Not found', { status: 404 });
+      const noAuthHandlerFetch = createMockFetch({
+        agentDescription: 'A test agent that requires authentication',
+        behavior: 'alwaysFail'
       });
 
       // Create client WITHOUT authHandler
@@ -461,7 +360,15 @@ describe('AuthHandlingFetch Tests', () => {
   let authHandlingFetch: ReturnType<typeof createAuthenticatingFetchWithRetry>;
 
   beforeEach(() => {
-    mockFetch = createMockFetch();
+    mockFetch = createMockFetch({
+      requiresAuth: true,
+      agentDescription: 'A test agent for authentication testing',
+      authErrorConfig: {
+        code: -32001,
+        message: 'Authentication required',
+        challenge: challengeManager.createChallenge()
+      }
+    });
     authHandler = new MockAuthHandler();
     authHandlingFetch = createAuthenticatingFetchWithRetry(mockFetch, authHandler);
   });
@@ -534,20 +441,12 @@ describe('AuthHandlingFetch Tests', () => {
       const onSuccessSpy = sinon.spy(successAuthHandler, 'onSuccessfulRetry');
       
       // Create a modified version of the existing mockFetch that returns 401 first, then 200
-      let callCount = 0;
-      const successMockFetch = createMockFetch();
-      successMockFetch.callsFake(async (url: string, options?: RequestInit) => {
-        callCount++;
-        if (callCount === 1) {
-          const requestId = extractRequestId(options);
-          return createResponse(requestId, undefined, {
-            code: -32001,
-            message: 'Authentication required'
-          }, 401, { 'WWW-Authenticate': 'Bearer challenge123' });
-        } else {
-          const requestId = extractRequestId(options);
-          return createResponse(requestId, { success: true });
-        }
+      const successMockFetch = createMockFetch({
+        messageConfig: {
+          messageId: 'msg-success',
+          text: 'Success after retry'
+        },
+        behavior: 'authRetry'
       });
       
       const successAuthFetch = createAuthenticatingFetchWithRetry(successMockFetch, successAuthHandler);
@@ -567,15 +466,8 @@ describe('AuthHandlingFetch Tests', () => {
       const failFetch = createAuthenticatingFetchWithRetry(mockFetch, failAuthHandler);
       
       // Mock fetch to return 401 first, then 401 again
-      let callCount = 0;
-      const failMockFetch = createMockFetch();
-      failMockFetch.callsFake(async (url: string, options?: RequestInit) => {
-        callCount++;
-        const requestId = extractRequestId(options);
-        return createResponse(requestId, undefined, {
-          code: -32001,
-          message: 'Authentication required'
-        }, 401);
+      const failMockFetch = createMockFetch({
+        behavior: 'alwaysFail'
       });
       
       const failAuthFetch = createAuthenticatingFetchWithRetry(failMockFetch, failAuthHandler);
