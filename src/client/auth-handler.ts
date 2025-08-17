@@ -3,23 +3,17 @@ export interface HttpHeaders { [key: string]: string };
 /**
  * Generic interface for handling authentication for HTTP requests.
  * 
- * An example flow using Universal Authentication ([DID](https://w3c.github.io/did/) based signing
- * of JWTs using server challenges and decentralized private keys):
+ * - For each HTTP request, this handler is called to provide additional headers to the request through
+ *   the headers() function.
+ * - After the server returns a response, the shouldRetryWithHeaders() function is called.  Usually this
+ *   function responds to a 401 or 403 response, but that is an implementation detail of the AuthenticationHandler.
+ * - If the shouldRetryWithHeaders() function returns new headers, then the request should retried with the provided
+ *   revised headers.  These provisional headers may, or may not, be optimistically stored for subsequent requests -
+ *   that is an implementation detail of the AuthenticationHandler.
+ * - If the request is successful and the onSuccessfulRetry() is defined, then the onSuccessfulRetry() function is
+ *   called with the headers that were used to successfully complete the request.  This callback provides an
+ *   opportunity to save the headers for subsequent requests if they were not already saved.
  * 
- * 1. First HTTP request adds the headers from the headers() function to the request.  These headers
- *    may contain an Authorization header with an Agentic JWT, or they might not if no JWT based session has 
- *    been established.  It is possible the headers() function will return a cached Authorization header
- *    that has become invalid
- * 2. For every HTTP response (even 200s) the shouldRetryWithHeaders() function is called.  A server
- *    that requires authentication and for which no Authentication header or an invalid Authentication
- *    header was provided, may return a 401 along with a WWW-Authenticate header that includes a Universal
- *    Authentication challenge.
- * 3. The shouldRetryWithHeaders() function, when a new Authorization token is deemed necessary (such as a 401), 
- *    may use private keys to sign the challenge from the first HTTP request and return the signed JWT
- *    as an Authorization header.
- * 4. The HTTP request is retried with the new Authorization header
- * 5. If the HTTP request is successful, then onSuccessfulRetry() is called (if defined) to signal the
- *    authentication was accepted by the server and can be cached for subsequent requests.
  */
 export interface AuthenticationHandler {
     /**
