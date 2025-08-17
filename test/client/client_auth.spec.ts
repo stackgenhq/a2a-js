@@ -324,14 +324,14 @@ describe('A2AClient Authentication Tests', () => {
 
     it('Client pipes server errors when no auth handler is specified', async () => {
       // Create a mock that returns 401 without authHandler
-      const noAuthHandlerFetch = createMockFetch({
+      const fetchWithApiError = createMockFetch({
         agentDescription: 'A test agent that requires authentication',
         behavior: 'alwaysFail'
       });
 
       // Create client WITHOUT authHandler
       const clientNoAuthHandler = new A2AClient('https://test-agent.example.com', {
-        fetchImpl: noAuthHandlerFetch
+        fetchImpl: fetchWithApiError
       });
 
       const messageParams = createMessageParams({
@@ -349,7 +349,7 @@ describe('A2AClient Authentication Tests', () => {
       expect((result as any).error).to.have.property('message', 'Authentication required');
 
       // Verify that fetch was called only once (no retry attempted)
-      expect(noAuthHandlerFetch.callCount).to.equal(2); // One for agent card, one for API call
+      expect(fetchWithApiError.callCount).to.equal(2); // One for agent card, one for API call
     });
   });
 });
