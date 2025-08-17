@@ -516,30 +516,39 @@ describe('AuthHandlingFetch Tests', () => {
   });
 
   describe('Header Merging', () => {
-    it('should merge auth headers with provided headers', async () => {
-      const authHandlerSpy = sinon.spy(authHandler, 'headers');
+    it('should merge auth headers with provided headers when auth headers exist', async () => {
+      // Create an auth handler that has stored authorization headers
+      const authHandlerWithHeaders = new MockAuthHandler();
       
-      await authHandlingFetch('https://test.example.com/api', {
+      // Simulate a successful authentication by calling onSuccessfulRetry
+      // This will store the Authorization header in the auth handler
+      await authHandlerWithHeaders.onSuccessfulRetry({
+        'Authorization': 'Bearer test-token-123'
+      });
+      
+      const authHandlingFetchWithHeaders = createAuthenticatingFetchWithRetry(mockFetch, authHandlerWithHeaders);
+      
+      await authHandlingFetchWithHeaders('https://test.example.com/api', {
         headers: {
           'Content-Type': 'application/json',
           'Custom-Header': 'custom-value'
         }
       });
 
-      expect(authHandlerSpy.called).to.be.true;
-      
-      // Verify that the fetch was called with merged headers
+      // Verify that the fetch was called with merged headers including auth headers
       const fetchCall = mockFetch.getCall(0);
       const headers = fetchCall.args[1]?.headers as Record<string, string>;
       
+      // Should include both user headers and auth headers
       expect(headers).to.include({
         'Content-Type': 'application/json',
-        'Custom-Header': 'custom-value'
+        'Custom-Header': 'custom-value',
+        'Authorization': 'Bearer test-token-123'
       });
       
-      // Should also include auth headers if any
-      // Note: The auth handler doesn't have any headers initially, so we don't expect Authorization
-      // The auth handler only provides headers after a 401/403 response
+      // Verify the auth handler's headers method returns the stored authorization
+      const storedHeaders = await authHandlerWithHeaders.headers();
+      expect(storedHeaders['Authorization']).to.equal('Bearer test-token-123');
     });
 
     it('should handle empty headers gracefully', async () => {
